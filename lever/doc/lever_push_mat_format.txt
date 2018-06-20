@@ -1,0 +1,27 @@
++ params: only the lever related ones worth mention
+    + lev_cal: some coefficient for lever signal vs deflection
+    + lev_thresh: threshold
+    + lev_baseline: lever signal level when it's still
++ screen: monitor hardware info
++ sound: sound signal data, and params (duration and amplitude)
++ response:
+    + nsampled: int32, total number of lever signal samples
+    + touchdata: f8, bar touch data, from 0 to 5.0
+    + samples_stop: int32, end of each trial in sample number
+    + start_time: f64, start timestamp
+    + stimdur: f8,
+    + rewardtimes: f8,
+    + actdelay: f8,
++ stimuli: seems not used
++ mouse: uint16, the mouse id
++ card:
+    + id: str, nidaq card id
+    + name: str, 'nidaq' for nidaq card
+    + trigger_mode: str, "out" or "in", as in who initiates sync trigger
+    + trigger_line: uint8
+    + trigger_port: uint8
+    + dio_ports: uint8
+    + dio_lines: uint8
+    + ai_chan: uint8, 3 channels, for lick, touch, and lever deflection
+    + inter_trigger_interval: float64, inf for single trigger only
+    + ai_fs: uint16, sampling rate of analog input
