@@ -2,7 +2,8 @@
 import numpy as np
 from scipy.signal import argrelextrema
 import pandas as pd
-from lever.util import fetch_lever
+from algorithm.time_series.event import find_response_onset
+from .utils import fetch_lever
 
 
 def hit_rate_daily(case_id: str, fov_id: int) -> pd.Series:
@@ -26,13 +27,15 @@ def amplitude_one_case(case_id: str, fov_id: int) -> pd.DataFrame:
     day_amplitude = list()
     for day_id, lever_data in fetch_lever(case_id, fov_id):
         extrema_neighbor = int(0.125 * lever_data.sample_rate)
-        for push_trace in lever_data.trials("motion")[0: int(round(lever_data.sample_rate))]:
+        lever_data.set_trials(find_response_onset(lever_data)[0], 1.0, lever_data.stim_time)
+        trials = lever_data.fold_trials()
+        for push_trace in trials.values:
             arg_maximum = next(iter(argrelextrema(push_trace, np.greater_equal,
                                                   order=extrema_neighbor)))
             # arg_minimum = next(iter(argrelextrema(push_trace, np.less, order=extrema_neighbor)))
             maximum = push_trace[arg_maximum[0]] if len(arg_maximum) > 0 else push_trace.max()
             # minimum = push_trace[arg_minimum[0]] if len(arg_minimum) > 0 else push_trace.min()
-            day_amplitude.append(maximum)
+            day_amplitude.append(maximum.mean())
             day_ids.append(day_id)
     return pd.DataFrame({'day_id': day_ids, 'values': day_amplitude})
 
@@ -45,8 +48,9 @@ def amplitude_normalized(case_id: str, fov_id: int) -> pd.DataFrame:
 
 def latency_one_case(case_id: str, fov_id: int) -> pd.DataFrame:
     day_ids, data = zip(*fetch_lever(case_id, fov_id))
-    day_latency = [(datum.motion_stamp - datum.stimulus_stamp)[datum.hit_trials] / datum.sample_rate for datum in data]
-    day_ids = np.repeat(day_ids, list(map(len, day_latency)))
+    onsets = (find_response_onset(datum) for datum in data)
+    day_latency = [(onset[0] - datum.timestamps[onset[1]]) / datum.sample_rate for onset, datum in zip(onsets, data)]
+    day_ids = np.repeat(day_ids, [len(x) for x in day_latency])
     return pd.DataFrame({'day_id': day_ids, 'values': np.hstack(day_latency)})
 
 

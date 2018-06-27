@@ -1,3 +1,0 @@
-let proj_root = "~/Dropbox/analysis/2016-leverpush/lever"
-call denite#custom#option('path', proj_root)
-exe "nnoremap <leader>f :NERDTreeToggle ".proj_root."<cr>"

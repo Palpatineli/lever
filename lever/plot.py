@@ -7,7 +7,8 @@ import seaborn as sns
 import pandas as pd
 
 
-COLOR_TABLE = (('WT', '#B90803'), ('Het', '#0C3D79'))
+COLOR_TABLE = (('WT', '#B90803'),  # dark red
+               ('Het', '#0C3D79'))  # dark blue
 
 
 def plot_daily(groups: dict, func_one_case: Callable[[str, int], float]):
@@ -22,17 +23,14 @@ def plot_daily(groups: dict, func_one_case: Callable[[str, int], float]):
 
 
 def plot_day_compiled(groups: dict, func_one_case: Callable[[str, int], pd.DataFrame]):
-    maximum, minimum = (None, None)
+    maximum, minimum = list(), list()
     for group_id, color in COLOR_TABLE:
         case_ids = groups[group_id]
-        result_list = list()
-        for case_id, fov_id in case_ids:
-            result_list.append(func_one_case(case_id, fov_id))
-        result = pd.concat(result_list, ignore_index=True)
-        maximum = update(maximum, result['day_id'].max(), np.less)
-        minimum = update(minimum, result['day_id'].min(), np.greater)
-        sns.pointplot(x='day_id', y='values', data=result, color=color)
-    plt.xlim((minimum - 1.5, maximum - 0.5))
+        result = pd.concat([func_one_case(*x) for x in case_ids], ignore_index=True)
+        maximum.append(result['day_id'].max())
+        minimum.append(result['day_id'].min())
+        sns.pointplot(x='day_id', y='values', data=result.groupby('day_id').mean().reset_index(), color=color)
+    plt.xlim((max(minimum) - 1.5, min(maximum) - 0.5))
 
 
 def update(x, y, comparison=np.greater):
