@@ -66,6 +66,12 @@ def t1_one_case(case_id: str, fov_id: int) -> pd.DataFrame:
 
 
 def reliability(trace_list: np.ndarray) -> float:
+    """Calculate the correlation between traces.
+    Args:
+        trace_list: rows of repeats
+    Returns:
+        average of coef
+    """
     length = len(trace_list)
     coef = 2 / (length * (length - 1))
     return (np.corrcoef(trace_list)[np.triu_indices(length)].sum() - length) * coef

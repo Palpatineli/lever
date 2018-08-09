@@ -1,6 +1,6 @@
 """analysis types done on lever push and related neuron activity"""
 from itertools import combinations
-from typing import List, Tuple
+from typing import List, Tuple, TypeVar
 import numpy as np
 from scipy.cluster.hierarchy import fcluster, single
 from scipy.stats import pearsonr
@@ -42,10 +42,11 @@ def create_push_template(lever_data: SparseRec, alpha: float=0.05, threshold: fl
     expert_pushes = traces[typical_trials]
     return TraceTemplate(expert_pushes, alpha)
 
-def classify_cells(lever_data: SparseRec, neuron_data: DataFrame, neuron_sample_rate: float, threshold: bool) -> dict:
+def classify_cells(lever_data: SparseRec, neuron_data: DataFrame, neuron_sample_rate: float, threshold: float) -> dict:
     """based on last day performance, classify cells by their correlation with typical pushes"""
     # find the typical pushes on the last day
-    typical_trials = threshold_big_cluster(lever_data.trials(lever_data.motion_stamp), threshold)[0]
+    lever_data.center_on('motion')
+    typical_trials = threshold_big_cluster(lever_data.fold_trials(), threshold)[0]
 
     # classify cells by their correlation to the typical pushes
     good, neg, bad = correlated_cells(lever_data, neuron_data, neuron_sample_rate, typical_trials)
