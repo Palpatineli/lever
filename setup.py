@@ -4,7 +4,8 @@ setup(
     name="lever",
     version=0.1,
     packages=find_packages(),
-    install_requires=['matplotlib', 'seaborn', 'numpy', 'scipy', 'pandas', 'fastdtw'],
+    install_requires=['matplotlib', 'seaborn', 'numpy', 'scipy', 'pandas', 'fastdtw', 'reader'],
+    dependency_links=['git+https://github.com/Palpatineli/reader.git'],
     package_data={
         '': ['*.csv', 'src/*'],
         'data': ['*.conf', '*.toml', '*.json'],
