@@ -4,7 +4,7 @@ import numpy as np
 from scipy.io import loadmat
 from algorithm.time_series.sparse_rec import SparseRec
 from algorithm.array import DataFrame
-from reader.object_array2dict import convert as cell2dict
+from .object_array2dict import convert as cell2dict
 
 def _calculate_full_trace(data_dict: dict) -> np.ndarray:
     raw_movement = data_dict['response']['mvmtdata'].ravel()
