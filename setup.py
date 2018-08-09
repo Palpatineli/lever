@@ -5,7 +5,7 @@ setup(
     version=0.1,
     packages=find_packages(),
     install_requires=['matplotlib', 'seaborn', 'numpy', 'scipy', 'pandas', 'fastdtw', 'reader'],
-    dependency_links=['git+ssh://git@github.com/Palpatineli/reader.git'],
+    dependency_links=['git+ssh://git@github.com/Palpatineli/reader.git#egg=reader'],
     package_data={
         '': ['*.csv', 'src/*'],
         'data': ['*.conf', '*.toml', '*.json'],
