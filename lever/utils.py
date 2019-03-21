@@ -1,35 +1,73 @@
-from typing import Iterator, Tuple
-from os import scandir
-from os.path import join, expanduser, splitext
+from typing import Tuple, TypeVar, Dict, Union, Generator, List
+import numpy as np
 
-from reader.image_j_measure import read as tp_read
-from algorithm.time_series.sparse_rec import SparseRec
+from noformat import File
 from algorithm.array import DataFrame
+from algorithm.time_series.sparse_rec import SparseRec
+from algorithm.time_series import resample, utils, event
+from algorithm.utils import is_list
+from .filter import devibrate_trials
+Data = TypeVar('Data', bound=DataFrame)
+MotionParams = Dict[str, Union[int, float]]
 
-from lever.reader.mat import load_mat
+from lever.reader import load_mat
 
-DATA_FOLDER = expanduser('~/Dropbox/data/2016-leverpush')
-DATA_PATH = join(DATA_FOLDER, 'mouse-{case_id}', 'fov-{fov_id}', '{data_type}')
+def filter_empty_trials(data: Data) -> Data:
+    sums = np.abs(np.nansum(data.values, (0, 2)))
+    mask = ~((sums > 1e100) | (sums < 1e-100))
+    return data[:, mask, :]
 
-def get_files(case_id: str, fov_id: int, data_type: str = 'lever-psychsr') -> Iterator[Tuple[int, str]]:
-    """List days and files of mouse.
-    Returns:
-        [(day, full_path)]
+def filter_empty_trial_sets(data: np.ndarray, results: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """filter together neurons and response"""
+    sums = np.abs(np.nansum(data, (0, 2)))
+    eps = np.spacing(1)
+    mask = ((sums > eps) | (sums < -eps)) & ~np.any(np.isnan(data), axis=(0, 2))
+    return data[:, mask, :], np.compress(mask, results, 0)
+
+def get_trials(data_file: File, motion_params: MotionParams) -> SparseRec:
+    lever = load_mat(data_file['response'])
+    lever.center_on("motion", **motion_params)
+    lever.fold_trials()
+    lever.values = np.squeeze(lever.values, 0)
+    lever.axes = lever.axes[1:]
+    return lever
+
+def neuron_lever(lever: SparseRec, neuron: DataFrame, neuron_rate: float,
+                 motion_params: MotionParams) -> Tuple[DataFrame, np.ndarray]:
+    """Read lever and corresponding neuron data by trial. I reimplement [fold_by] here to
+    acheive same length of the two segments.
+    Args:
+        data_file: file including spike and response(lever)
+        motion_params: MotionParams, a dict but all params are optional
+            may have [pre_time] and [post_time] in seconds, [quiet_var] and [event_thres] in float,
+            [window_size] in sample_no
+    Retursn:
+        neurons: a DataFrame with folded neurons
+        lever: a DataFrame with folded lever, resampled to neuron sample rate
     """
-    for entry in scandir(DATA_PATH.format(case_id=case_id, fov_id=fov_id, data_type=data_type)):
-        if entry.is_file() and entry.name.startswith('day-'):
-            basename = splitext(entry.name)[0]
-            day = int(basename[basename.find('-') + 1:])
-            yield day, entry.path
+    params = {x: motion_params[x] for x in ("quiet_var", "window_size", "event_thres") if x in motion_params}
+    event_onsets = event.find_response_onset(lever, **params)[0]
+    lever_resample = resample(lever.values[0], lever.sample_rate, neuron_rate)
+    anchor = np.rint((event_onsets / lever.sample_rate - motion_params['pre_time']) * neuron_rate).astype(np.int)
+    duration = int(round((motion_params.get('pre_time', 0.1) + motion_params.get('post_time', 0.9)) * neuron_rate))
+    lever_folded = utils.take_segment(lever_resample, anchor, duration)
+    neuron_trials = np.stack([utils.take_segment(trace, anchor, duration) for trace in neuron.values])
+    mask, filtered = devibrate_trials(lever_folded, motion_params['pre_time'])
+    return neuron_trials[:, mask, :], lever_folded[mask, :]
 
-def fetch_data(case_id: str, fov_id: int, sample_rate: float) -> Iterator[Tuple[int, SparseRec, DataFrame]]:
-    lever_days, lever_cases = list(zip(*get_files(case_id, fov_id, 'lever-psychsr')))
-    for day_id, case in get_files(case_id, fov_id, 'spike'):
-        try:
-            yield day_id, load_mat(lever_cases[lever_days.index(day_id)]), tp_read(case, sample_rate)
-        except ValueError:
-            pass
+def _fixed_sum_round(score, sums):
+    temp_sum = score.astype(int).sum(axis=1)
+    if np.any(sums > temp_sum):
+        minor = score - score.astype(int)
+        mask = np.argsort(np.argsort(minor, axis=1), axis=1)\
+            > (score.shape[1] - 1 - (sums - temp_sum)).reshape(-1, 1)
+        return score.astype(int) + mask
+    return score.astype(int)
 
-def fetch_lever(case_id: str, fov_id: int) -> Iterator[Tuple[int, SparseRec]]:
-    for day_id, case in get_files(case_id, fov_id, 'lever-psychsr'):
-        yield day_id, load_mat(case)
+def iter_groups(x: Dict[str, List[Union[List[float], float]]]) -> Generator[Tuple[int, str, List[float]], None, None]:
+    for idx, (group_str, group) in enumerate(x.items()):
+        if is_list(group[0]):
+            for sess in group:
+                yield idx, group_str, sess
+        else:
+            yield idx, group_str, group

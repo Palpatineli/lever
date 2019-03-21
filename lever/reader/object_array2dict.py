@@ -2,9 +2,7 @@
 This function converts such array into a dictionary tree, which is easier to read
 """
 from typing import Union
-
 import numpy as np
-
 
 def convert(array) -> Union[np.ndarray, dict, None, list]:
     """The main conversion function"""

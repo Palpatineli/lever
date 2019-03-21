@@ -1,0 +1,58 @@
+# under 'data'
+
+- mouse: [int](mouse id)
+- params
+    - reward: [float](water in μl)
+    - rewardProb: [float](probability of reward)
+    - responseTime: [float](trial time in seconds)
+    - lev_cal: [float](coefficient?)
+    - lev_baseline: [float](to be subtracted)
+    - lev_still: [float](threshold below which the lever is considered still)
+    - lev_thresh: [float](threshold up which the lever is considered pushed)
+- sound
+    - tone_amp: [float]([0, 1] amplitude)
+    - tone_time: [float](in seconds)
+- response
+    - reward_amt: [float](=params.reward)
+    - reward_time: [float](water reward in seconds)
+    - reward_cal: [float, float](slope, intercept for reward time)
+    - start_time: [float](arbitrary starting seconds)
+    - nsampled: [int](length of samples, both for lever push and touch/lick)
+    - lickdata: [float * nsampled](lick resistence data)
+    - mvmtdata: [float * nsampled](actual lever data)
+    - touchdata: [float * nsampled](bar touch data, not sure where is it coming from)
+    - choice: [int * trial_no](5 for miss, 2 for hit)
+    - choice_id: [int * trial_no](5 for miss, 1 for push forward)
+    - reward: [float * trial_no](0 for nothing, otherwise reward in μl)
+    - rewardtimes: [float * rewarded_trial_no](reward time in seconds, skip the 0 rewards)
+    - earlyCueTime: [float * trial_no](tone time in seconds)
+    - trialstart: [float * trial_no](when trial start, pretty much immediately before cue 1E-4s)
+    - trialtime: [float * trial_no](when the trial ends: ~2.6s after [response.rewardtimes] for trials that have rewards)
+    - screenX: [int * [trial_no, sample_no]](where the stim is on screen for each frame at 60Hz during trials between trial start and rewardtime, except there is one for non-rewarded trials as well, naturally all zero for lever push has no screen)
+    - ballX: [float * [trial_no, sample_no]](ball position in 60Hz during trials, kinda coupled to lever when there is no ball but not precisely)
+    - samps: [int * [trial_no, sample_no]](when batches of 16 samples arrive during trial)
+    - timePC: [float * [trial_no, sample_no]](PC timestamps for sample during trial for screenX, ballX, samps)
+    - samples_start: [int * trial_no](start of each trial in sample_id, has -3.9 displacement)
+    - precue_samples_start: [int * trial_no](start of each trial in sample_id, sample as samples_start but some trials 16 samples ahead of samples_start)
+    - samples_stop: [int * trial_no](end of each trial, start - end covers same period as timePC/ballX/screenX but in 256Hz)
+    - samples_reward: [int * trial_no](same as samples_stop except 2.6s lagging, 672 or 656 / 256 samples lagging)
+    - licksamples: [int * trial_no](exactly the same as samples_reward, could be wrong setting with rig/circuit)
+    - stimdur: [float * trial_no](same as trialtime, exactly)
+    - actstimdur: [float * trial_no](duration of trial, 1.5s less than trialtime - trialstart)
+    - delay: [bool * trial_no](whether there is delay, often 0)
+    - playEarlyCue: [bool * max_trial_no](whether there is early cue for each trial)
+    - actdelay: [float * trial_no](not sure what, low numbers < 0.02s)
+- screen: [ignored](info on the screen size/frequency etc)
+- card: [ignored](nidaq card channel and port)
+    - ai_fs: [int](sampling frequency)
+- stimuli: [ignored]
+
+# time structure of a trial
+
++ earlyCueTime
+    - ~1E-4s
++ trialstart
+    - variable response time
++ rewardtimes
+    - 2.6s on rewarded trials, otherwise 7.62s from trialstart
++ trialtime / stimdur

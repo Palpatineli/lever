@@ -1,0 +1,20 @@
+digraph {
+    node[shape="box" style="rounded" color="#458588" penwidth=2.0 fontname="Roboto"]
+    edge[color="#458588" penwidth=2.0]
+    file_path[label="file path"]
+    lever_data[label="lever data"]
+    neuron_data[label="neuron data"]
+    show_cluster[label="show\ncluster"]
+    cluster_ids[label="cluster ids"]
+    file_path -> lever_data
+    neuron_data -> lever_data [dir="none"]
+    {rank=same; lever_data; neuron_data}
+    lever_data -> linkage
+    linkage -> cluster_ids
+    show_cluster -> linkage [dir="back"]
+    show_cluster -> threshold
+    eyeball -> threshold
+    threshold -> cluster_ids
+    cluster_ids -> prediction
+    neuron_data -> prediction
+}

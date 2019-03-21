@@ -1,0 +1,22 @@
+digraph {
+    node[shape="box" style="rounded" color="#458588" penwidth=2.0 fontname="Roboto"]
+    edge[color="#458588" penwidth=2.0]
+    file_path[label="file path"]
+    lever_data[label="lever data"]
+    neuron_data[label="neuron data"]
+    file_path -> lever_data
+    neuron_data -> lever_data [dir="none"]
+    {rank=same; lever_data; neuron_data}
+    k_means[label="k means"]
+    lever_data -> k_means
+    mean_sil[label="mean\nsilhouette"]
+    {rank=same; k_means; mean_sil}
+    k_means -> mean_sil
+    main_cluster_id[label="main\ncluster id"]
+    mean_sil -> main_cluster_id
+    main_cluster_id -> cluster_ids
+    cluster_ids[label="cluster ids"]
+    k_means -> cluster_ids
+    cluster_ids -> prediction
+    neuron_data -> prediction
+}

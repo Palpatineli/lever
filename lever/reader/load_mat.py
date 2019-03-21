@@ -1,5 +1,5 @@
 """wrap around leverpush data"""
-from typing import Union
+from typing import Union, Dict
 import numpy as np
 from scipy.io import loadmat
 from algorithm.time_series.sparse_rec import SparseRec
@@ -24,13 +24,13 @@ def _convert_psychsr_lever(data_dict: dict) -> dict:
               'sequence': {'lever_response': lever_response}}
     return result
 
-def load_mat(file_name: Union[str, dict]) -> SparseRec:
+def load_mat(file_name: Union[str, Dict[str, dict]]) -> SparseRec:
     if isinstance(file_name, str):
         data_dict = cell2dict(loadmat(file_name)['data'])
     else:
         data_dict = file_name['data']
-    samples_rate = data_dict['card']['ai_fs']
-    stimulus = _convert_psychsr_lever(data_dict)
-    trace = _calculate_full_trace(data_dict).reshape(1, -1)
-    axes = [np.array(['lever trajectory']), np.arange(trace.shape[1]) / samples_rate]
+    samples_rate: float = data_dict['card']['ai_fs']  # type: ignore
+    stimulus = _convert_psychsr_lever(data_dict)  # type: ignore
+    trace = _calculate_full_trace(data_dict).reshape(1, -1)  # type: ignore
+    axes = [np.arange(trace.shape[1]) / samples_rate]
     return SparseRec(DataFrame(trace, axes), stimulus, samples_rate)
