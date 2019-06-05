@@ -1,0 +1,4 @@
+digraph {
+    node[shape="box" style="rounded" color="#458588" penwidth=2.0 fontname="Roboto"]
+    edge[color="#458588" penwidth=2.0]
+}

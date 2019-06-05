@@ -47,7 +47,7 @@ class DendrogramUpdater(object):
         dendrogram(self.data, color_threshold=y_data, ax=self.ax)
         return self.ax.axhline(y_data)
 
-def get_threshold(data, color_threshold: float = None):
+def get_threshold(data: np.ndarray, color_threshold: float = None) -> float:
     if color_threshold is None:
         ddata = dendrogram(data, no_plot=True)
         color_threshold = np.median([np.mean(x[1:]) for x in ddata['dcoord']])

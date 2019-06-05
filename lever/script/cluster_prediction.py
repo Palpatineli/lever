@@ -4,6 +4,7 @@ And give prediction score from neuron to trajectory clustering."""
 ##
 from typing import Union, Dict, List
 from os.path import join, expanduser
+import pickle as pkl
 import numpy as np
 import toml
 from sklearn.decomposition import PCA
@@ -13,10 +14,10 @@ import matplotlib.pyplot as plt
 from mplplot import Figure, tsplot
 from noformat import File
 from algorithm.array import DataFrame
-from algorithm.utils import quantize, map_tree, zip_tree, unflatten, flatten
+from algorithm.utils import quantize, map_tree, map_tree_parallel, zip_tree, unflatten, flatten
 from algorithm.time_series import fold_by
 from lever.cluster.main import get_cluster_labels, get_linkage, kNNdist, min_points, pca_bisect
-from lever.decoding.cluster import precision
+from lever.decoding.cluster import precision, get_neurons
 from lever.plot import get_threshold
 from lever.filter import devibrate_trials
 from lever.utils import get_trials, MotionParams
@@ -31,17 +32,15 @@ with open(join(project_folder, 'data', 'recording.toml')) as fp:
 files = map_tree(lambda x: (File(join(project_folder, "data", x["path"]))), mice)
 COLORS = ["#dc322fff", "#268bd2ff", "#d33682ff", "#2aa198ff", "#859900ff", "#b58900ff", "#50D0B8FF"]
 # Interactively set threshold and save in file attrs
-def get_thresholds(data_file: File, params: MotionParams, overwrite: bool = False):
+def get_thresholds(data_file: File, overwrite: bool = False):
+    linkage, mask = get_linkage(data_file, motion_params)
     if overwrite or ('hierarchy_threshold' not in data_file.attrs):
-        threshold = get_threshold(get_linkage(data_file, params))
+        threshold = get_threshold(linkage)
         data_file.attrs['hierarchy_threshold'] = threshold
-# Get label of clusters
-def label_cluster(data_file: File) -> np.ndarray:
-    """Get trial_id for each cluster given the set threshold.
-    Returns:
-        labels: 2D array [2 x trial_no], 1st row = trial ids, 2nd row = cluster ids starting at 1
-    """
-    return get_cluster_labels(get_linkage(data_file, motion_params), data_file.attrs['hierarchy_threshold'])
+        data_file.attrs.flush()
+    threshold = data_file.attrs['hierarchy_threshold']
+    clusters = get_cluster_labels(linkage, threshold)
+    return clusters, mask
 # Show Templates from two clustering methods: kmeans vs. manual hierarchical
 def draw_cluster_3d(data_file: File, params: MotionParams, labels: np.ndarray, info: Dict[str, Union[str, int]]):
     trials = get_trials(data_file, params).values
@@ -128,70 +127,81 @@ def visualize_prediction(data_file: File, params: MotionParams):
         ax[0].plot_surface(xx, yy, z, alpha=0.4, color=COLORS[-1])
         ax[0].set_zlim(pca_weigths[:, 2].min(), pca_weigths[:, 2].max())
 
-## Actually running
-map_tree(get_thresholds, files)
-cluster_labels = map_tree(label_cluster, files)
-with open(join(res_folder, 'clustering.npz'), 'wb') as fpb:
-    np.savez_compressed(fpb, **flatten(cluster_labels))
-## load and unflatten
-cluster_labels = unflatten(np.load(join(res_folder, "clustering.npz")))
-map_tree(lambda x: draw_cluster_3d(*x), zip_tree(files, cluster_labels, mice))
-map_tree(lambda x: draw_template(*x), zip_tree(files, cluster_labels, mice))
-## get precision
+def get_score_mask(x, **kwargs):
+    data_file, (clusters, mask) = x
+    return precision(get_neurons(data_file, motion_params), data_file.file_name, clusters, mask=mask, **kwargs)
+
+def get_score(x, **kwargs):
+    data_file, clusters = x
+    return precision(get_neurons(data_file, motion_params), data_file.file_name, clusters, **kwargs)
+
+# Actually running
+## Label Clusters
+def run_label_clusters():
+    results = map_tree(lambda x: get_thresholds(x, True), files)
+    with open(join(res_folder, "clustering.pkl"), 'wb') as fpb:
+        pkl.dump(results, fpb)
+## Draw Template
+def run_draw_template():
+    cluster_labels = unflatten(np.load(join(res_folder, "clustering.npz")))
+    map_tree(lambda x: draw_cluster_3d(*x), zip_tree(files, cluster_labels, mice))
+    map_tree(lambda x: draw_template(*x), zip_tree(files, cluster_labels, mice))
+## Get precision
 # clustered with k_means
-def _get_k_means(data_file: File):
-    return k_means(get_trials(data_file, motion_params).values, 2)[1]
-cluster_labels = map_tree(_get_k_means, files)
-score_raw = map_tree(lambda x: precision(x[0], x[1], motion_params), zip_tree(files, cluster_labels))
-score_corr = map_tree(lambda x: precision(x[0], x[1], motion_params, corr=True),
-                      zip_tree(files, cluster_labels))
-with open(join(res_folder, "k_prediction_raw.npz"), 'wb') as fpb:
-    np.savez_compressed(fpb, **flatten(score_raw))
-with open(join(res_folder, "k_prediction_corr.npz"), 'wb') as fpb:
-    np.savez_compressed(fpb, **flatten(score_corr))
-print('done')
-## clustered with hierarchy
-cluster_labels = np.load(join(res_folder, "clustering.npz"))
-score_raw = map_tree(lambda x: precision(x[0], x[1], motion_params), zip_tree(files, cluster_labels))
-score_corr = map_tree(lambda x: precision(x[0], x[1], motion_params, corr=True),
-                      zip_tree(files, cluster_labels))
-with open(join(res_folder, "h_prediction_raw.npz"), 'wb') as fpb:
-    np.savez_compressed(fpb, **flatten(score_raw))
-with open(join(res_folder, "h_prediction_corr.npz"), 'wb') as fpb:
-    np.savez_compressed(fpb, **flatten(score_corr))
-print('done')
+def run_k_means_precision():
+    def _get_k_means(data_file: File):
+        return k_means(get_trials(data_file, motion_params).values, 2)[1]
+    cluster_labels = map_tree(_get_k_means, files)
+    score_raw = map_tree(get_score, zip_tree(files, cluster_labels))
+    score_corr = map_tree(lambda x: get_score(x, corr=True), zip_tree(files, cluster_labels))
+    np.savez_compressed(join(res_folder, "k_prediction_raw.npz"), **flatten(score_raw))
+    np.savez_compressed(join(res_folder, "k_prediction_corr.npz"), **flatten(score_corr))
+    print('done')
+## Clustered with hierarchy
+def run_hierarchy_precision():
+    with open(join(res_folder, "clustering.pkl"), 'rb') as fpb:
+        cluster_labels = pkl.load(fpb)
+    score_raw = map_tree_parallel(get_score_mask, zip_tree(files, cluster_labels))
+    score_corr = map_tree_parallel(lambda x: get_score_mask(x, corr=True), zip_tree(files, cluster_labels))
+    np.savez_compressed(join(res_folder, "h_prediction_raw.npz"), **flatten(score_raw))
+    np.savez_compressed(join(res_folder, "h_prediction_corr.npz"), **flatten(score_corr))
+    print('done')
 ## clustered with bisection in PC1
-def _get_bisect(data):
-    mask, filtered = devibrate_trials(get_trials(data[0], motion_params)[0], motion_params["pre_time"])
-    return pca_bisect(filtered), mask
-files = map_tree(lambda x: (File(join(project_folder, "data", x["path"])), x), mice)
-bisect_labels = map_tree(_get_bisect, files)
-score_raw = map_tree(lambda x: precision(x[0][0], x[1][0], motion_params, repeats=1000, mask=x[1][1]),
-                     zip_tree(files, bisect_labels))
-score_corr = map_tree(lambda x: precision(x[0][0], x[1][0], motion_params, corr=True, repeats=1000, mask=x[1][1]),
-                      zip_tree(files, bisect_labels))
-np.savez_compressed(open(join(res_folder, "bis_prediction_raw.npz"), 'wb'), **flatten(score_raw))
-np.savez_compressed(open(join(res_folder, "bis_prediction_corr.npz"), 'wb'), **flatten(score_corr))
-print('done')
+def run_pc_bisec_precision():
+    def _get_bisect(data):
+        mask, filtered = devibrate_trials(get_trials(data[0], motion_params)[0], motion_params["pre_time"])
+        return pca_bisect(filtered), mask
+    bisect_labels = map_tree(_get_bisect, files)
+    score_raw = map_tree(get_score_mask, zip_tree(files, bisect_labels))
+    score_corr = map_tree(lambda x: get_score_mask(x, corr=True), zip_tree(files, bisect_labels))
+    np.savez_compressed(open(join(res_folder, "bis_prediction_raw.npz"), 'wb'), **flatten(score_raw))
+    np.savez_compressed(open(join(res_folder, "bis_prediction_corr.npz"), 'wb'), **flatten(score_corr))
+    print('done')
 ## and draw bisect prediction
-score_raw = unflatten(np.load(join(res_folder, "bis_prediction_raw.npz")))
-score_corr = unflatten(np.load(join(res_folder, "bis_prediction_corr.npz")))
-print('mean (raw vs. corr): {} vs. {}', map_tree(np.mean, score_raw), map_tree(np.mean, score_corr))
-def _draw_pred(raw, corr, info):
-    name = f"pred-perf-bis-{info['group']}-{info['idx']}.png"
-    with Figure(join(img_folder, "prediction", name), (6, 4)) as (ax,):
-        ax.hist(raw, 50, alpha=0.5, color=COLORS[2])
-        ax.hist(corr, 50, alpha=0.5, color=COLORS[1])
-map_tree(lambda x: _draw_pred(x[0], x[1], x[2]), zip_tree(score_raw, score_corr, mice))
-draw_perm_comp([score_raw, score_corr], ['raw', 'corr'])
-## show comaprison of scoring between raw and corr
-score_raw = unflatten(np.load(join(res_folder, 'k_prediction_raw.npz')))
-score_corr = unflatten(np.load(join(res_folder, 'k_prediction_corr.npz')))
-score_ids = [("wt", [1]), ("glt1", [1]), ("dredd", [0])]
-score = list()
-for group, indices in score_ids:
-    raw_group = np.hstack([score_raw[group][idx] for idx in indices])
-    corr_group = np.hstack([score_corr[group][idx] for idx in indices])
-    score.append([raw_group, corr_group])
-draw_twoway_comp(score, ['raw', 'corr'], ['wt', 'glt1', 'dredd'])
+def run_draw_prediction():
+    score_raw = unflatten(np.load(join(res_folder, "bis_prediction_raw.npz")))
+    score_corr = unflatten(np.load(join(res_folder, "bis_prediction_corr.npz")))
+    print('mean (raw vs. corr): {} vs. {}', map_tree(np.mean, score_raw), map_tree(np.mean, score_corr))
+
+    def _draw_pred(raw, corr, info):
+        name = f"pred-perf-bis-{info['group']}-{info['idx']}.png"
+        with Figure(join(img_folder, "prediction", name), (6, 4)) as (ax,):
+            ax.hist(raw, 50, alpha=0.5, color=COLORS[2])
+            ax.hist(corr, 50, alpha=0.5, color=COLORS[1])
+    map_tree(lambda x: _draw_pred(x[0], x[1], x[2]), zip_tree(score_raw, score_corr, mice))
+    draw_perm_comp([score_raw, score_corr], ['raw', 'corr'])
+    ## show comaprison of scoring between raw and corr
+    score_raw = unflatten(np.load(join(res_folder, 'k_prediction_raw.npz')))
+    score_corr = unflatten(np.load(join(res_folder, 'k_prediction_corr.npz')))
+    score_ids = [("wt", [1]), ("glt1", [1]), ("dredd", [0])]
+    score = list()
+    for group, indices in score_ids:
+        raw_group = np.hstack([score_raw[group][idx] for idx in indices])
+        corr_group = np.hstack([score_corr[group][idx] for idx in indices])
+        score.append([raw_group, corr_group])
+    draw_twoway_comp(score, ['raw', 'corr'], ['wt', 'glt1', 'dredd'])
 ## permutation test on these scores
+##
+if __name__ == '__main__':
+    run_hierarchy_precision()
+##

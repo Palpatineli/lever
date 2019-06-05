@@ -12,8 +12,7 @@ project_folder = expanduser("~/Sync/project/2017-leverpush")
 img_folder = join(project_folder, "report", "img")
 res_folder = join(project_folder, "report", "measure")
 COLORS = ["#dc322fff", "#268bd2ff", "#d33682ff", "#2aa198ff", "#859900ff", "#b58900ff"]
-with open(join(project_folder, "data/recording.toml")) as fp:
-    mice = toml.load(fp)
+mice = toml.load(join(project_folder, "data/recording.toml"))
 files = {x['session']: File(join(project_folder, 'data', x['path'])) for x in mice['wt']['0304']['3']}
 ## cell: lever trajectory compare to neuron activity
 def draw_neuron(day: int, data_file: File, neuron_id: int, params: MotionParams):

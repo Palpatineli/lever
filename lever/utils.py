@@ -1,5 +1,8 @@
-from typing import Tuple, TypeVar, Dict, Union, Generator, List
+from typing import Tuple, TypeVar, Dict, Union, Generator, List, Any
+from os import remove, path
 import numpy as np
+import subprocess as sp
+import pickle as pkl
 
 from noformat import File
 from algorithm.array import DataFrame
@@ -25,9 +28,7 @@ def filter_empty_trial_sets(data: np.ndarray, results: np.ndarray) -> Tuple[np.n
     return data[:, mask, :], np.compress(mask, results, 0)
 
 def get_trials(data_file: File, motion_params: MotionParams) -> SparseRec:
-    lever = load_mat(data_file['response'])
-    lever.center_on("motion", **motion_params)
-    lever.fold_trials()
+    lever = load_mat(data_file['response']).center_on("motion", **motion_params).fold_trials()
     lever.values = np.squeeze(lever.values, 0)
     lever.axes = lever.axes[1:]
     return lever
@@ -68,6 +69,20 @@ def iter_groups(x: Dict[str, List[Union[List[float], float]]]) -> Generator[Tupl
     for idx, (group_str, group) in enumerate(x.items()):
         if is_list(group[0]):
             for sess in group:
-                yield idx, group_str, sess
+                yield idx, group_str, sess  # type: ignore
         else:
-            yield idx, group_str, group
+            yield idx, group_str, group  # type: ignore
+
+def save_obj(save_path: str, obj: Any):
+    with open(save_path, 'wb') as fp:
+        pkl.dump(obj, fp)
+    compress_path = path.splitext(save_path)[0] + ".7z"
+    sp.run(["7z", "a", "-mx=1", compress_path, save_path])
+
+def load_obj(save_path: str) -> Any:
+    compress_path = path.splitext(save_path)[0] + ".7z"
+    sp.run(["7z", "e", compress_path])
+    with open(save_path, 'rb') as fp:
+        obj = pkl.load(fp)
+    remove(save_path)
+    return obj

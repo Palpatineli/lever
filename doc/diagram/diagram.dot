@@ -1,0 +1,74 @@
+digraph {
+    node[shape="box" style="rounded" color="#458588" penwidth=2.0 fontname="Roboto Mono"]
+    edge[color="#458588" penwidth=2.0 fontname="Roboto Mono"]
+    subgraph cluster_alignment {
+        label="align.py"
+        two_photon_tiff
+        aligned
+        ROI
+        measurement
+        spikes
+        manual
+    }
+    subgraph cluster_log {
+        label="log.py"
+        log
+        processed_log
+        trial_lever_trace
+        trial_neuron_activity
+    }
+    subgraph cluster_classifier {
+        label="classifier.py"
+        intertrial_linkage
+        manual_2
+        linkage_threshold
+        trial_classification
+        classification_power
+    }
+    two_photon_tiff[label="2P TIF", style="solid", color="#EF3054"] 
+    aligned[label="Aligned 2P"]
+    two_photon_tiff -> aligned[color="#EF3054" label="align"]
+    aligned -> ROI
+    manual[shape="oval", color="#0197F6"]
+    manual -> ROI[color="#0197F6" label="roi"]
+    aligned -> measurement[label="measure"]
+    ROI -> measurement
+    measurement -> spikes[label="spike"]
+    log[style="solid", color="#EF3054"]
+    processed_log[shape="record", style="solid", label="{ProcessedLog |+ filtered trace\l+ sample rate\l+ choice\l+ blank time \l+ trial start \l+ trail time\l}", fontsize=7]
+    log -> processed_log [label="log + filtered_log"]
+    trial_lever_trace[shape="record" style="solid" label="{Trial Log|+ lever trace\l+ trial time\l}" fontsize=7]
+    processed_log -> trial_lever_trace  [label="trial log"]
+    trial_neuron_activity[label="Trial\nNeuron\nActivity"]
+    trial_lever_trace -> trial_neuron_activity
+    spikes -> trial_neuron_activity [label="trial neuron"]
+    intertrial_lever_correlation[label="InterTrial\nCorrelation", shape="tab", color="#DD614A"]
+    trial_lever_trace -> intertrial_lever_correlation
+    trial_lever_trace -> lever_parameters[color="#DD614A"]
+    lever_parameters[shape="record", style="solid", label="{LeverShape|+delay\l+amplitude\l+speed\l+fall\l}", color="#DD614A", fontsize=7]
+    intertrial_neural_correlation[label="InterTrial\nCorrelation", shape="tab", color="#DD614A"]
+    interneural_correlation[label="InterNeural\nCorrelation", shape="tab", color="#DD614A"]
+    trial_neuron_activity -> intertrial_neural_correlation
+    trial_neuron_activity -> interneural_correlation
+    decoding[label="Decoding\nPower", shape="tab", color="#DD614A"]
+    spikes -> decoding[color="#DD614A"]
+    processed_log -> decoding[color="#DD614A"]
+    single_neuron_decoding[label="Single\nNeuron\nDecoding"]
+    processed_log -> single_neuron_decoding
+    spikes -> single_neuron_decoding
+    neuron_ordering[shape="tab", label="Neuron\nOrdering", color="#DD614A"]
+    single_neuron_decoding -> neuron_ordering[color="#DD614A"]
+    intertrial_linkage[label="Linkage\nMatrix"]
+    trial_lever_trace -> intertrial_linkage
+    trial_classification[label="Trial\nClassification"]
+    linkage_threshold[label="Linkage\nThreshold"]
+    intertrial_linkage -> linkage_threshold
+    manual_2[label="manual", shape="oval", color="#0197F6"]
+    manual_2 ->linkage_threshold 
+    intertrial_linkage -> manual_2
+    intertrial_linkage -> trial_classification
+    linkage_threshold -> trial_classification
+    classification_power[label="Classification\nPower", shape="tab", color="#DD614A"]
+    trial_classification -> classification_power
+    trial_neuron_activity -> classification_power
+}

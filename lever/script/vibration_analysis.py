@@ -14,8 +14,7 @@ from lever.utils import get_trials
 
 motion_params = {"quiet_var": 0.001, "window_size": 1000, "event_thres": 0.3, "pre_time": 0.1, "post_time": 1.0}
 project_folder = expanduser("~/Sync/project/2018-leverpush-chloe")
-with open(join(project_folder, "data/recording.toml")) as fp:
-    mice = toml.load(fp)
+mice = toml.load(join(project_folder, "data/recording.toml"))
 files = {x: [File(join(project_folder, "data", a["path"])) for a in y] for x, y in mice.items()}
 ##
 FREQ = 256

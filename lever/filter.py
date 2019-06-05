@@ -1,16 +1,16 @@
-from typing import Tuple
+from typing import Tuple, TypeVar, Dict
 from os.path import join, split
 import numpy as np
 from numpy.fft import fft, fftfreq
 from scipy.signal import firwin, fftconvolve
 from scipy.io import loadmat, savemat
+from algorithm.time_series import Recording
 
 __all__ = ["devibrate_trials"]
 
 def devibrate(trace: np.ndarray, sample_rate: int, target_freq: int = 30, cut_off_buffer: int = 5) -> np.ndarray:
     """Filter continuous lever trace"""
     filter_size = sample_rate // 5 - (sample_rate // 5) % 2 + 1
-    print("filter params: ", filter_size, target_freq - cut_off_buffer, sample_rate)
     fir = firwin(filter_size, target_freq - cut_off_buffer, fs=sample_rate)
     return fftconvolve(trace, fir, mode='same')
 
@@ -46,6 +46,25 @@ def devibrate_trials(trials: np.ndarray, motion_onset: float,
     relative_power = absolute_power / filtered_freq_with_motion
     mask = (relative_power * absolute_power) < 0.4
     return mask, filtered
+
+T = TypeVar("T", bound=Recording)
+MotionParams = Dict[str, float]
+
+def devibrate_rec(trials: T, params: MotionParams = None) -> T:
+    if trials.trial_anchors is None:
+        trials.center_on("motion", **params)
+    if not trials.converted:
+        trials.fold_trials()
+    if trials.values.shape[0] == 1:
+        values = trials.values[0]
+        trials.axes = trials.axes[1:]
+    else:
+        values = trials.values
+    mask, filtered = devibrate_trials(values, trials.pre_time, sample_rate=trials.sample_rate)
+    trials.trial_anchors = trials.trial_anchors[mask]  # type: ignore
+    trials.axes[0] = trials.axes[0][mask]
+    trials.values = filtered[mask, :]
+    return trials
 
 def convert(file_path: str, motion_onset: float) -> None:
     trials = loadmat(file_path)

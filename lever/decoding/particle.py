@@ -72,8 +72,8 @@ def decoder_factory(bounds: Bounds) -> Decoder:
     return _decoder
 
 def predictor_factory(y: np.ndarray) -> Decoder:
-    bounds: Bounds = (tuple(np.quantile(y, [0.005, 0.995])), (-2, 1), (-5, 5))  # type: ignore
-    w_hat = np.var(y) / 4
+    bounds: Bounds = (tuple(np.quantile(y, [0.01, 0.99])), (-2, 1), (-5, 5))  # type: ignore
+    w_hat = 0.001  # np.var(y) / 4
 
     def _decoder(X_learn, y_learn, X_test) -> np.ndarray:
         neurons_hat = estimate_neurons(y_learn, X_learn, bounds=bounds)

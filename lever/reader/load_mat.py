@@ -32,5 +32,5 @@ def load_mat(file_name: Union[str, Dict[str, dict]]) -> SparseRec:
     samples_rate: float = data_dict['card']['ai_fs']  # type: ignore
     stimulus = _convert_psychsr_lever(data_dict)  # type: ignore
     trace = _calculate_full_trace(data_dict).reshape(1, -1)  # type: ignore
-    axes = [np.arange(trace.shape[1]) / samples_rate]
+    axes = [np.array(["right-lever"]), np.arange(trace.shape[1]) / samples_rate]
     return SparseRec(DataFrame(trace, axes), stimulus, samples_rate)

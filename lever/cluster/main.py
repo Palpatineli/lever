@@ -29,7 +29,7 @@ def get_l2(points: np.ndarray) -> np.ndarray:
     mesh_x, mesh_y = np.meshgrid(idx, idx)
     return np.sqrt(np.sum((points[mesh_x, :] - points[mesh_y, :]) ** 2, 2))[np.triu_indices(points.shape[0], 1)]
 
-trace_cluster = get_l2
+trace_cluster = dtw_cluster
 
 def threshold_big_cluster(motion_traces: List[np.ndarray], threshold: float) -> Tuple[np.ndarray, np.ndarray]:
     """Find largest cluster and trials belonging to it
@@ -54,8 +54,8 @@ def get_linkage(record_file: File, params: Dict[str, float]) -> np.ndarray:
     lever.center_on("motion", **params)
     lever.fold_trials()
     mask, lever_trials = devibrate_trials(lever.values[0], params['pre_time'], sample_rate=lever.sample_rate)
-    dist_mat = trace_cluster(lever_trials)
-    return linkage(dist_mat)
+    dist_mat = trace_cluster(lever_trials[mask, ...])
+    return linkage(dist_mat), mask
 
 def get_cluster_labels(link_mat: np.ndarray, threshold: int) -> np.ndarray:
     clusters = fcluster(link_mat, threshold, 'distance')
