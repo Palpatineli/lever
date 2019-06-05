@@ -1,5 +1,7 @@
 dist
 noformat
+_build
+*/test/data
 *.egg-info
 *.svg
 .pytest_cache
