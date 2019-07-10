@@ -1,17 +1,14 @@
 ##
-from typing import Dict, Tuple
+from typing import Dict
 from pathlib import Path
-from multiprocessing import Pool, cpu_count
 import numpy as np
 import toml
-from algorithm.array import DataFrame
-from algorithm.time_series import SparseRec, fold_by
+from algorithm.time_series import SparseRec
 from lever.reader import load_mat
 from lever.filter import devibrate_rec, devibrate
-from pypedream import Task, getLogger, Input, InputObj
+from pypedream import Task, Input, InputObj
 
-from align import res_spike
-__all__ = ['res_trial_neuron', 'res_filter_log']
+__all__ = ['res_filter_log']
 
 proj_folder = Path.home().joinpath("Sync/project/2018-leverpush-chloe")
 Task.save_folder = proj_folder.joinpath("data", "interim")
@@ -51,22 +48,7 @@ def make_trial_log(log: SparseRec, params: Dict[str, float]) -> SparseRec:
 task_trial_log = Task(make_trial_log, "2019-04-30T18:38", "trial-log", extra_args=(motion_params, ))
 res_trial_log = task_trial_log(res_filter_log)
 
-def make_trial_neuron(trial_log: SparseRec, spike_framerate: Tuple[Dict[str, np.ndarray], float]) -> DataFrame:
-    spikes, frame_rate = spike_framerate
-    # trial_neurons should be [neuron, trial, time_points]
-    return fold_by(DataFrame.load(spikes), trial_log, frame_rate, True)
-
-task_trial_neuron = Task(make_trial_neuron, "2019-05-02T16:27", "trial-neuron")
-res_trial_neuron = task_trial_neuron([res_trial_log, res_spike])
-
+quiet_motion_params = {"quiet_var": 0.001, "window_size": 1000, "event_thres": 0.3, "pre_time": 1.0, "post_time": 1.0}
+task_trial_log_quiet = Task(make_trial_log, "2019-04-30T18:38", "trial-log", extra_args=(quiet_motion_params, ))
+res_trial_log_quiet = task_trial_log_quiet(res_filter_log)
 ##
-def main():
-    logger = getLogger("astrocyte", "exp-log.log")
-    pool = Pool(max(1, cpu_count() - 2))
-    params_dict = [(info['name'], logger) for info in mice]
-    result = pool.starmap(res_trial_neuron.run, params_dict)
-    return result
-
-##
-if __name__ == '__main__':
-    main()

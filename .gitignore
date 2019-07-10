@@ -5,4 +5,4 @@ _build
 *.egg-info
 *.svg
 .pytest_cache
-
+*.log
