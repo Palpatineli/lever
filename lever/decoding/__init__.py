@@ -1,3 +1,3 @@
-from .cluster import precision
+from .cluster import accuracy
 
-__all__ = ['precision']
+__all__ = ['accuracy']

@@ -1,6 +1,7 @@
-from typing import Dict, List, Sequence
-from dataclasses import dataclass
+from typing import Dict, List, Sequence, Optional
+from dataclasses import dataclass, is_dataclass
 from pathlib import Path
+import numpy as np
 import toml
 
 @dataclass
@@ -28,17 +29,21 @@ def read_index(proj_folder: Path) -> List[Case]:
     index_file = proj_folder.joinpath("data", "index", "index.toml")
     return [Case(**x) for x in toml.loads(index_file.read_text())['recordings']]
 
+def group_index(index: List[Case], group_dict: Dict[str, List[Item]]) -> List[Optional[str]]:
+    group_lookup = {(value.id, value.session): key for key, values in group_dict.items() for value in values}
+    return [group_lookup.get((case.id, case.session), None) for case in index]
+
 def group(data: list, item_list: List[Case], group_dict: Dict[str, List[Item]]) -> List[tuple]:
     group_lookup = {(value.id, value.session): key for key, values in group_dict.items() for value in values}
     result = list()
-    is_seq = isinstance(data[0], Sequence) and not isinstance(data[0], str)
+    is_seq = isinstance(data[0], Sequence) and not isinstance(data[0], str) or is_dataclass(data[0])
     for datum, item in zip(data, item_list):
         group_name = group_lookup.get((item.id, item.session), None)
         if group_name is not None:
             if is_seq:
-                result.append((*datum, f"{item.id}-{item.session}", group_name))
+                result.append((*datum, str(item.id), str(item.session), group_name))
             else:
-                result.append((datum, f"{item.id}-{item.session}", group_name))
+                result.append((datum, str(item.id), str(item.session), group_name))
     return result
 
 def group_nested(data_list: List[list], item_list: List[Case], group_dict: Dict[str, List[Item]]) -> List[tuple]:
@@ -50,7 +55,7 @@ def group_nested(data_list: List[list], item_list: List[Case], group_dict: Dict[
         if group_name is not None:
             for datum in data:
                 if is_seq:
-                    result.append((*datum, f"{item.id}", group_name))
+                    result.append((*datum, str(item.id), str(item.session), group_name))
                 else:
-                    result.append((datum, f"{item.id}", group_name))
+                    result.append((datum, str(item.id), str(item.session), group_name))
     return result

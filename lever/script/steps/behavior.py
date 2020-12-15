@@ -60,8 +60,8 @@ def main():
 def merge_behavior(result: List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]]):
     grouping = read_group(proj_folder, 'grouping')
     mean_result = np.array([(np.mean(a), np.mean(b), np.mean(c), np.mean(d), e) for a, b, c, d, e in result])
-    merged = pd.DataFrame(group(mean_result, mice, grouping),
-                          columns=("amplitude", "speed", "delay", "hit_rate", "reliability", "case_id", "group"))
+    merged = pd.DataFrame(group(mean_result, mice, grouping), columns=("amplitude", "speed", "delay", "hit_rate",
+                                                                       "reliability", "case_id", "session_id", "group"))
     merged.to_csv(proj_folder.joinpath("data", "analysis", "behavior.csv"))
 
 def check_length():

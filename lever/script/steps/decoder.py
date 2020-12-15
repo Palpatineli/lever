@@ -12,7 +12,8 @@ from entropy_estimators import mutual_info
 from algorithm.array import DataFrame
 from algorithm.time_series import SparseRec
 from algorithm.stats import split_time_series, scale_features  # noqa
-from pypedream import Task, getLogger
+from algorithm.optimize import PieceLinear2
+from pypedream import Task, getLogger, get_result
 from mplplot import Figure
 from lever.script.steps.log import res_filter_log
 from lever.script.steps.trial_neuron import res_spike
@@ -24,6 +25,11 @@ simplefilter(action='ignore', category=FutureWarning)
 SVR_PARAMS = {"gamma": 1E-4, "C": 12, "epsilon": 1E-3, "cache_size": 1E3}
 
 def align_XY(spike_sample_rate: Tuple[DataFrame, float], filterd_log: SparseRec) -> Tuple[DataFrame, SparseRec]:
+    """
+    Returns:
+        X: spikes scaled
+        y: lever trajectory resampled to the sample rate of spikes
+    """
     spike, sample_rate = spike_sample_rate
     resampled_trace = InterpolatedUnivariateSpline(filterd_log.axes[0], filterd_log.values[0])(spike['y'])
     y = filterd_log.create_like(scale_features(resampled_trace), [spike['y']])
@@ -58,6 +64,13 @@ def order_slope(single_powers: np.ndarray) -> float:
 task_single_order = Task(order_slope, "2019-06-16T17:40", "single-order")
 res_single_order = task_single_order(res_neuron_info)
 
+def order_slope2(single_powers: np.ndarray) -> PieceLinear2:
+    ordered_powers = np.sort(single_powers[single_powers > 0])
+    linear = PieceLinear2.fit(np.arange(len(ordered_powers)), np.log(ordered_powers))
+    return linear
+task_single_order2 = Task(order_slope2, "2019-07-11T19:52", "single-order-piece2")
+res_single_order2 = task_single_order2(res_neuron_info)
+
 def prediction(spike_trajectory: Tuple[DataFrame, SparseRec], single_powers: np.ndarray, svr_params: Dict[str, float],
                neuron_no: int = 20) -> np.ndarray:
     """Predict the trajectory from the top <neuron_no> informative neurons."""
@@ -82,37 +95,26 @@ task_decode_power = Task(decode_power, "2019-05-23T18:46", "decode-power")
 res_decode_power = task_decode_power([res_align_xy, res_predict])
 
 ##
-def main():
-    logger = getLogger("astrocyte", "log-decode.log")
-    pool = Pool(max(1, cpu_count() - 5))
-    params = [(item.name, logger) for item in mice]
-    result = pool.starmap(res_decode_power.run, params)
-    return result
-
 def merge(result: List[np.ndarray]):
     grouping = read_group(proj_folder, 'grouping')
-    merged = pd.DataFrame(group(result, mice, grouping), columns=("mutual_info", "case_id", "group"))
+    merged = pd.DataFrame(group(result, mice, grouping), columns=("mutual_info", "case_id", "session_id", "group"))
     merged.to_csv(proj_folder.joinpath("data", "analysis", "decoder_power.csv"))
-
-def cno_merge(result: List[np.ndarray]):
     grouping = read_group(proj_folder, 'cno-schedule')
-    merged = pd.DataFrame(group(result, mice, grouping), columns=("mutual_info", "case_id", "treat"))
+    merged = pd.DataFrame(group(result, mice, grouping), columns=("mutual_info", "case_id", "session_id", "treat"))
     merged.to_csv(proj_folder.joinpath("data", "analysis", "decoder_cno.csv"))
 
-def order_slope_merge():
-    logger = getLogger("astrocyte", "log-decode.log")
-    pool = Pool(max(1, cpu_count() - 2))
-    params = [(item.name, logger) for item in mice]
-    result = pool.starmap(res_single_order.run, params)
+def order_slope_merge(result: List[np.ndarray]):
     grouping = read_group(proj_folder, 'grouping')
-    merged = pd.DataFrame(group(result, mice, grouping), columns=("slope", "case_id", "group"))
+    merged = pd.DataFrame(group(result, mice, grouping), columns=("slope", "case_id", "session_id", "group"))
     merged.to_csv(proj_folder.joinpath("data", "analysis", "single_power_slope.csv"))
 
-def single_power_merge():
-    logger = getLogger("astrocyte", "log-decode.log")
-    pool = Pool(max(1, cpu_count() - 2))
-    params = [(item.name, logger) for item in mice]
-    result = pool.starmap(res_neuron_info.run, params)
+def order_slope2_merge(result: List[PieceLinear2]):
+    grouping = read_group(proj_folder, 'grouping')
+    merged = pd.DataFrame(group(result, mice, grouping),
+                          columns=("x0", "y0", "k0", "k1", "case_id", "session_id", "group"))
+    merged.to_csv(proj_folder.joinpath("data", "analysis", "single_power_slope2.csv"))
+
+def single_power_merge(result: List[np.ndarray]):
     grouping = read_group(proj_folder, "grouping")
     lookup = {(value.id, value.session): key for key, values in grouping.items() for value in values}
     table = list()
@@ -125,7 +127,7 @@ def single_power_merge():
     mi_table.to_csv(proj_folder.joinpath("data", "analysis", "single_power.csv"))
 
 if __name__ == '__main__':
-    # cno_merge(main())
-    # single_power_merge()
-    # main()
-    order_slope_merge()
+    # single_power_merge(get_result([x.name for x in mice], [res_neuron_info])[0])
+    # merge(get_result([x.name for x in mice], [res_decode_power])[0])
+    # order_slope_merge(get_result([x.name for x in mice], [res_single_order])[0])
+    order_slope2_merge(get_result([x.name for x in mice], [res_single_order2])[0])

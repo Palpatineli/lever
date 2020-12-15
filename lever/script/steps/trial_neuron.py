@@ -6,7 +6,7 @@ from scipy.stats import pearsonr
 import pandas as pd
 from algorithm.array import DataFrame
 from algorithm.time_series import SparseRec, fold_by
-from pypedream import Task, getLogger, get_result
+from pypedream import Task, get_result
 from lever.script.steps.log import res_trial_log, res_trial_log_quiet
 from lever.script.steps.align import res_spike
 from lever.script.steps.utils import read_index, read_group, group_nested
@@ -39,7 +39,8 @@ def make_related_neurons(trial_log: SparseRec, spike_framerate: Tuple[Dict[str, 
     spike, frame_rate = spike_framerate
     trial_spikes = fold_by(DataFrame.load(spike), trial_log, frame_rate, False)
     trajectory = scale(trial_log.values).ravel()
-    p_values = [pearsonr(neuron, trajectory)[1] for neuron in scale(trial_spikes.values).reshape(trial_spikes.shape[0], -1)]
+    p_values = [pearsonr(neuron, trajectory)[1] for neuron
+                in scale(trial_spikes.values).reshape(trial_spikes.shape[0], -1)]
     return np.array(p_values)
 
 task_related_neurons = Task(make_related_neurons, "2019-07-10T15:46", "related-neurons")

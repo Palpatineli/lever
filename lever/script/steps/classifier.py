@@ -1,7 +1,6 @@
 ##
-from typing import Tuple, List
+from typing import Tuple, List, Dict
 from itertools import combinations
-from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from warnings import simplefilter
 import numpy as np
@@ -10,12 +9,11 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from fastdtw import fastdtw
 from algorithm.array import DataFrame
 from algorithm.time_series import SparseRec
-from algorithm.utils import quantize
 from lever.plot import get_threshold  # , plot_scatter
-from lever.script.steps.utils import group, read_group, read_index
+from lever.script.steps.utils import group_index, read_group, read_index
 from lever.script.steps import log, trial_neuron
-from lever.decoding.cluster import precision
-from pypedream import Task, getLogger
+from lever.decoding.cluster import accuracy
+from pypedream import Task, get_result
 simplefilter(action='ignore', category=FutureWarning)
 
 proj_folder = Path.home().joinpath("Sync/project/2018-leverpush-chloe/")
@@ -52,45 +50,34 @@ def classifier_power(trial_neuron: DataFrame, cluster: np.ndarray) -> Tuple[floa
     Args:
         trial_neuron: neuron activity segmented into trials
     Returns:
-        score_raw: prediction precision score from raw neuron acitivty
+        score_raw: prediction accuracy score from raw neuron acitivty
         score_corr: the same from interneuron correlation
     """
-    y = quantize(cluster, groups=1)
-    score_all = precision(trial_neuron, y, transform="none", repeats=100, kernel='rbf')
-    score_corr = precision(trial_neuron, y, transform="corr", repeats=100, kernel='rbf')
-    score_mean = precision(trial_neuron, y, transform="mean", repeats=100, kernel='rbf')
-    return score_all, score_corr, score_mean
-task_classifier = Task(classifier_power, "2019-05-17T14:33", "classifier")
+    return [accuracy(trial_neuron, cluster, transform=trans, repeats=100, kernel='rbf',  # type: ignore
+                     validate=True, C=4, gamma=1E-2) for trans in ("none", "corr", "mean")]
+task_classifier = Task(classifier_power, "2019-07-22T17:25", "classifier-validated")
 res_classifier_power = task_classifier([trial_neuron.res_trial_neuron, res_cluster])
 
 ## Aggregate Analysis
-def main():
-    logger = getLogger("astrocyte", "log-classifier.log")
-    pool = Pool(max(1, cpu_count() - 2))
-    param_dict = [(item.name, logger) for item in mice]
-    result = pool.starmap(res_classifier_power.run, param_dict)
-    return result
-
 def merge(result: List[np.ndarray]):
-    grouping = read_group(proj_folder, 'grouping')
-    result_types = ('none', 'mean', 'corr')
-    type_res = {name: [x[idx] for x in result] for idx, name in enumerate(result_types)}
-    all_types = [pd.DataFrame(group(type_res[x], mice, grouping)) for x in result_types]
-    for df, name in zip(all_types, result_types):
-        df['type'] = name
-    merged = pd.concat(all_types, ignore_index=True)
-    merged.columns = ["precision", "id", "group", "type"]
-    merged.to_csv(proj_folder.joinpath("data", "analysis", "classifier_power.csv"))
+    group_strs = group_index(mice, read_group(proj_folder, 'grouping'))
+    value_list, tag_list = list(), list()
+    for one_result, group_str, case in zip(result, group_strs, mice):
+        if group_str is not None:
+            for values, fit_type in zip(one_result, ("none", "mean", "corr")):
+                for value in values:
+                    value_list.append(value)
+                    tag_list.append((fit_type, group_str, case.id, case.session, case.fov))
+    merged = pd.concat([pd.DataFrame(np.hstack(value_list).reshape(-1, 1), columns=['precision']),
+                        pd.DataFrame(tag_list, columns=['type', 'group', 'id', 'session', 'fov'])], axis=1)
+    merged.to_csv(proj_folder.joinpath("data", "analysis", "classifier_power_validated.csv"))
 
 def traces():
     from lever.script.steps import log
     from algorithm.utils import quantize
-    logger = getLogger("astrocyte", "log-classifier.log")
-    pool = Pool(max(1, cpu_count() - 2))
-    param_dict = [(item.name, logger) for item in mice]
     index = 1
-    cluster = pool.starmap(res_cluster.run, param_dict[index: index + 1])
-    trials = pool.starmap(log.res_trial_log.run, param_dict[index: index + 1])
+    cluster = get_result([x.name for x in mice][index: index + 1], [res_cluster])
+    trials = get_result([x.name for x in mice][index: index + 1], [log.res_trial_log])
     result = list()
     for trial, y in zip(trials[0].values, quantize(cluster[0])):
         for idx, item in enumerate(trial):
@@ -104,16 +91,18 @@ def plot():
     mean_pred = df[df['type'] == 'corr'].groupby("id").mean()
     sns.scatterplot("group", "precision", mean_pred)
 
-def test():
-    logger = getLogger("astrocyte", "log-classifier.log")
-    pool = Pool(max(1, cpu_count() - 2))
-    param_once = [(item.name, logger) for item in mice[40: 41]]
-    result = pool.starmap(res_classifier_power.run, param_once)
-    return result
+def check_data_size():
+    neurons = get_result([x.name for x in mice], [trial_neuron.res_trial_neuron])[0]
+    group_strs = group_index(mice, read_group(proj_folder, "grouping"))
+    res: Dict[str, List[Tuple[int, int]]] = {"dredd": [], "glt1": [], "wt": []}
+    for session, group_str in zip(neurons, group_strs):
+        if group_str is not None:
+            print(session.shape[0: 2])
+            res[group_str].append(session.shape)
+    res = {key: np.array(value).sum(axis=0) for key, value in res.items()}
 ##
 if __name__ == '__main__':
-    # main()
-    merge(main())
+    merge(get_result([x.name for x in mice], [res_classifier_power])[0])
     # print_tree()
     # draw_tree()
 ##

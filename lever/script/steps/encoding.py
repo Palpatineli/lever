@@ -41,32 +41,46 @@ def get_predictor(behavior: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray
     trajectory = take_segment(trace.values, onset, trial_samples)
     speed = take_segment(np.diff(trace.values), onset - 1, trial_samples)
     y = np.array([take_segment(neuron, onset, trial_samples) for neuron in spike.values])
-    preds = Predictors((0, delay_sample), (delay_period,), (hit, amplitude, max_speed, delay), (trajectory, speed))
-    grouping = Grouping(np.array([1, 2]), np.array([3]), np.array([4, 5, 6, 7]), np.array([8, 9]))
+    preds = Predictors((0, delay_sample), (delay_period,), (hit, delay), (trajectory, speed))
+    grouping = Grouping(np.array([1, 2]), np.array([3]), np.array([4, 5]), np.array([6, 7]))
     preds, grouping = build_predictor(preds, grouping, hit, spline)
     return preds, y, grouping
-task_predictor = Task(get_predictor, "2019-06-21T13:04", "encoding-predictor",
+task_predictor = Task(get_predictor, "2020-02-20T13:04", "encoding-predictor-minimal",
                       extra_args=(5, bspline_set(np.arange(7), 2)))
 res_predictor = task_predictor([res_behavior, res_align_xy])
 
-task_encoding = Task(run_encoding, "2019-06-20T11:44", "encoding-r2")
+task_encoding = Task(run_encoding, "2020-02-24T09:29", "encoding-r2-minimal")
 res_encoding = task_encoding(res_predictor)
 
 from encoding_model.main import build_model
 task_model = Task(build_model, "2019-06-27T21:18", "encoding-model")
 res_model = task_model(res_predictor)
+predictor_names = ["start", "reward", "isMoving", "hit", "delay", "trajectory", "speed", "all"]
 
 ##
 def merge(result: List[Tuple[np.ndarray, np.ndarray]]):
     r2mean = np.array([np.mean(np.maximum(0, x[0]), axis=0) for x in result])
     groups = read_group(proj_folder, 'grouping')
-    column_names = ("start", "reward", "delay", "hit", "amplitude", "max_speed", "delay_length", "trajectory", "speed", "id", "group")
-    mean = pd.DataFrame(group(r2mean, mice, groups), columns=column_names)
-    mean.to_csv(proj_folder.joinpath("data", "analysis", "encoding_mean.csv"))
+    mean = pd.DataFrame(group(r2mean, mice, groups), columns=predictor_names + ["case_id", "session_id", "group"])
+    mean.to_csv(proj_folder.joinpath("data", "analysis", "encoding_mean_minimal.csv"))
     r2s = [x[0] for x in result]
-    merged = pd.DataFrame(group_nested(r2s, mice, groups), columns=column_names)
-    merged.to_csv(proj_folder.joinpath("data", "analysis", "encoding.csv"))
+    merged = pd.DataFrame(group_nested(r2s, mice, groups), columns=predictor_names + ["case_id", "session_id", "group"])
+    merged.to_csv(proj_folder.joinpath("data", "analysis", "encoding_minimal.csv"))
+
+def check_predictor_size():
+    predictors = get_result([x.name for x in read_index(proj_folder)], [res_predictor])[0]
+    groups = pd.DataFrame([(x.id, x.session, group_str) for group_str, value
+                           in read_group(proj_folder, "grouping").items() for x in value])
+    groups.columns = ["id", "session", "group"]
+    mice = pd.DataFrame([[x.id, x.session, x.name] for x in read_index(proj_folder)])
+    mice.columns = ["id", "session", "name"]
+    lookup = groups.join(mice.set_index(["id", "session"]), on=["id", "session"]).set_index("name").sort_index()
+    res = {"wt": [], "dredd": [], "glt1": []}
+    for mouse, predictor in zip(read_index(proj_folder), predictors):
+        if mouse.name in lookup.index:
+            res[lookup.loc[mouse.name, "group"]].append(predictor[1].shape[0: 2])
+    res = {key: np.sum(value, axis=0) for key, value in res.items()}
 
 if __name__ == '__main__':
     merge(get_result([x.name for x in mice], [res_encoding], "log-encoding")[0])
-    get_result([x.name for x in mice], [res_model], "log-encoding-model")[0]
+    # get_result([x.name for x in mice], [res_model], "log-encoding-model")[0]

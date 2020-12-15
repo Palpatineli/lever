@@ -1,10 +1,9 @@
 ##
 from typing import List, Dict, Tuple
 from pathlib import Path
-from multiprocessing import Pool, cpu_count
 import numpy as np
 import toml
-from pypedream import FileObj, Task, getLogger, InputObj, Input
+from pypedream import FileObj, Task, get_result, InputObj, Input
 from aligner.align import Alignment
 from aligner.roi_reader import Roi, read_roi_zip
 from deconvolve.main import deconvolve
@@ -21,16 +20,11 @@ def _info_to_name(info: Dict[str, str]) -> str:
 
 class AlignmentInput(InputObj):
     def time(self) -> float:
-        tif_files = list(self.file_path.joinpath("original").glob(self.name + "*.tif"))
-        if len(tif_files) == 0:
-            return 0
-        return sorted(tif_file.stat().st_mtime for tif_file in tif_files)[-1]
+        tif_file = self.file_path.joinpath("original", f"{self.name}-ch2-5hz.tif")
+        return tif_file.stat().st_mtime
 
     def load(self):
-        tif_files = list(self.file_path.joinpath("original").glob(self.name + "*.tif"))
-        if len(tif_files) == 0:
-            return 0
-        tif_file = sorted((x.stat().st_mtime, x) for x in tif_files)[-1][1]
+        tif_file = self.file_path.joinpath("original", f"{self.name}-ch2-5hz.tif")
         return Alignment(tif_file)
 
 def make_align(session: Alignment) -> Alignment:
@@ -39,7 +33,7 @@ def make_align(session: Alignment) -> Alignment:
 
 input_tif = Input(AlignmentInput, "2015-01-01T00:00", "tif")
 
-class AlignedmentCache(FileObj):
+class AlignmentCache(FileObj):
     def save(self, obj):
         obj.save(self.file_path)
 
@@ -50,7 +44,7 @@ class AlignedmentCache(FileObj):
         displacement = self.file_path.joinpath("displacement.npy")
         return displacement.stat().st_mtime if displacement.exists() else 0
 
-task_align = Task(make_align, "2018-04-30T15:12", "align", file_cacher=AlignedmentCache)
+task_align = Task(make_align, "2018-04-30T15:12", "align", file_cacher=AlignmentCache)
 res_align = task_align(input_tif)
 
 class RoiInput(InputObj):
@@ -86,10 +80,7 @@ res_spike = task_spike(res_measure)
 
 ##
 def main():
-    logger = getLogger("astrocyte", "alignment.log")
-    pool = Pool(max(1, cpu_count() - 2))
-    params_dict = [(info['name'], logger) for info in mice]
-    result = pool.starmap(res_spike.run, params_dict)
+    result = get_result([x['name'] for x in mice], [res_spike], "alignment")[0]
     return result
 
 if __name__ == '__main__':

@@ -21,7 +21,7 @@ def _convert_psychsr_lever(data_dict: dict) -> dict:
     config['stim_time'] = config.pop('responseTime')
     result = {'config': config,
               'timestamps': data_dict['response']['samples_start'],
-              'rewardtamps': data_dict['response']['samples_stop'],
+              'rewardstamps': data_dict['response']['samples_stop'],
               'sequence': {'lever_response': lever_response}}
     return result
 

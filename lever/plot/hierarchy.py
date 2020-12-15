@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.cluster.hierarchy import dendrogram
 from mplplot import Figure
-from mplplot.interact import LineMover
+from mplplot.interact import AxhlineMover
 import matplotlib.pyplot as plt
 
 def fancy_dendrogram(*args, **kwargs):
@@ -51,11 +51,12 @@ def get_threshold(data: np.ndarray, color_threshold: float = None) -> float:
     if color_threshold is None:
         ddata = dendrogram(data, no_plot=True)
         color_threshold = np.median([np.mean(x[1:]) for x in ddata['dcoord']])
-    with Figure() as (ax, ):
+    with Figure() as axes:
+        ax = axes[0]
         dendrogram(data, color_threshold=color_threshold, ax=ax)
         line = ax.axhline(color_threshold)
         updater = DendrogramUpdater(data, ax)
-        mover = LineMover(line, updater)
+        mover = AxhlineMover(line, updater)
     while mover.on:
         plt.pause(1)
     del mover

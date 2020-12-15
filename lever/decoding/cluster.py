@@ -1,16 +1,16 @@
 import numpy as np
 from thundersvm import SVC
 from sklearn.decomposition import PCA
-from sklearn.metrics import precision_score
+from sklearn.metrics import accuracy_score
 from algorithm import time_series as ts
 from algorithm.stats import split_data, scale_features
 from algorithm.utils import quantize
 
 PC_NO = 20
 
-def precision(trials: ts.SparseRec, labels: np.ndarray, transform: str = "none",
-              repeats: int = 1000, train_size: int = 40, test_size: int = 10,
-              kernel: str = "linear") -> np.ndarray:
+def accuracy(trials: ts.SparseRec, labels: np.ndarray, transform: str = "none",
+             repeats: int = 1000, train_size: int = 30, test_size: int = 20,
+             validate: bool = False, **kwargs) -> np.ndarray:
     """Give precision estimation on the estimate from a simple SVC.
     The score is calculated as tp / (tp + fp)
     where tp is true positivie and fp is false positivie.
@@ -40,8 +40,12 @@ def precision(trials: ts.SparseRec, labels: np.ndarray, transform: str = "none",
     else:
         raise ValueError("[precision] <transform> must be one of 'none', 'corr', or 'mean'.")
     X = PCA(PC_NO).fit_transform(X) if X.shape[0] > PC_NO else X
-    svc = SVC(kernel=kernel, gamma="auto")
+    params = {"kernel": "linear", "gamma": "auto"}
+    params.update(kwargs)
+    svc = SVC(**params)
     splitter = split_data(X, y, repeats, train_size, test_size)
-    # result = [precision_score(y_te, svc.fit(X_tr, y_tr).predict(X_te)) for X_tr, y_tr, X_te, y_te in splitter]
-    result = [precision_score(y_tr, svc.fit(X_tr, y_tr).predict(X_tr)) for X_tr, y_tr, _, _ in splitter]
+    if validate:
+        result = [accuracy_score(y_te, svc.fit(X_tr, y_tr).predict(X_te)) for X_tr, y_tr, X_te, y_te in splitter]
+    else:
+        result = [accuracy_score(y_tr, svc.fit(X_tr, y_tr).predict(X_tr)) for X_tr, y_tr, _, _ in splitter]
     return [x for x in result if (x is not None and x > 0.0)]
