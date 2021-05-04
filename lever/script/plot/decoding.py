@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 from pickle import dump, load
 from warnings import simplefilter
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 import seaborn as sns
@@ -13,8 +14,9 @@ from algorithm.stats import scale_features
 from algorithm.optimize.piece_lm import PieceLinear2, PieceLinear3
 from pypedream import Task, get_result
 from lever.script.steps.log import res_trial_log
-from lever.script.steps.decoder import res_predict, res_align_xy, res_neuron_info
-from lever.script.steps.decoder import mice, proj_folder, read_group, group
+from lever.script.steps.decoder import res_predict, res_align_xy, res_neuron_info, res_trial_xy
+from lever.script.steps.decoder import res_predict_trial
+from lever.script.steps.decoder import mice, proj_folder, grouping
 from lever.script.utils import print_stats_factory
 from mplplot import Figure, plots
 from mplplot.accessory import add_scalebar
@@ -26,8 +28,36 @@ fig_folder = proj_folder.joinpath("report", "fig", "decoder")
 analysis_folder = proj_folder.joinpath("data", "analysis")
 colors = ["#00272B", "#099963", "#f94040", "#1481BA", "#E0FF4F"]
 print_stats = print_stats_factory(proj_folder.joinpath("report", "stat", "decoding.txt"))
+
 ##
 def pop_decoder_power():
+    def temp(data, ax, name):
+        res = ["median: "] + str(data.groupby('group').median()).split('\n')[2:]
+        group_names = ('wt', 'glt1', 'dredd', "gcamp6f")
+        group_strs = ["WT", "GLT1", "Gq", "gcamp6f"]
+        annotation = list()
+        for (idx, x), (idy, y) in combinations(enumerate(group_names), 2):
+            p = mannwhitneyu(data.loc[x, ], data.loc[y, ], False, 'two-sided').pvalue
+            res.append(f"mann u, {x} v. {y} p={p}")
+            if p < 0.05:
+                annotation.append(((idx, idy), p))
+        print_stats(name, res)
+        values = [data.loc[x, "mutual_info"] for x in group_names]
+        boxplots = plots.boxplot(ax, values, whis=(10., 90.), zorder=1, showfliers=False, colors=colors)
+        plots.dots(ax, values, zorder=3, s=24, jitter=0.02)
+        ax.set_xticklabels(group_strs)
+        plots.annotate_boxplot(ax, boxplots, 24, 1.2, annotation)
+    with Figure(fig_folder.joinpath("decoder-comp.svg"), figsize=(8, 9), grid=(1, 2)) as axes:
+        axes[0].get_shared_y_axes().join(*axes)
+        data: pd.DataFrame = pd.read_csv(analysis_folder.joinpath("decoder_power.csv"), index_col=[0])  # type: ignore
+        data = data.set_index(["group", "session"], append=True).reorder_levels(["group", "id", "session"]).sort_index()  # type: ignore
+        data = data.drop([('gcamp6f', 51551, 4)], axis='index')
+        temp(data, axes[0], "pop-power by fov")
+        temp(data.groupby(["group", "id"]).mean(), axes[1], "pop-power by case")
+
+    data.loc['gcamp6f']
+
+def pop_decoder_power_trial():
     def temp(data, ax, name):
         res = ["median: "] + str(data.groupby('group').median()).split('\n')[2:]
         group_names = ('wt', 'glt1', 'dredd')
@@ -44,15 +74,15 @@ def pop_decoder_power():
         plots.dots(ax, values, zorder=3, s=24, jitter=0.02)
         ax.set_xticklabels(group_strs)
         plots.annotate_boxplot(ax, boxplots, 24, 1.2, annotation)
-    with Figure(fig_folder.joinpath("decoder-comp.svg"), figsize=(8, 9), grid=(1, 2)) as axes:
+    with Figure(fig_folder.joinpath("decoder-comp-trial.svg"), figsize=(8, 9), grid=(1, 2)) as axes:
         axes[0].get_shared_y_axes().join(*axes)
-        data = pd.read_csv(analysis_folder.joinpath("decoder_power.csv"), index_col=[0])\
-            .set_index(["group", "case_id", "session_id"]).sort_index()
+        data: pd.DataFrame = pd.read_csv(analysis_folder.joinpath("decoder_power_trial.csv"), index_col=[0])  # type: ignore
+        data = data.set_index(["group", "session"], append=True).reorder_levels(["group", "id", "session"]).sort_index()  # type: ignore
         temp(data, axes[0], "pop-power by fov")
-        temp(data.groupby(["group", "case_id"]).mean(), axes[1], "pop-power by case")
+        temp(data.groupby(["group", "id"]).mean(), axes[1], "pop-power by case")
 
 def plot_cno_saline():
-    data = pd.read_csv(analysis_folder.joinpath("decoder_cno.csv"), usecols=[1, 2, 3], index_col=[2, 1]).sort_index()
+    data: pd.DataFrame = pd.read_csv(analysis_folder.joinpath("decoder_cno.csv"), usecols=[1, 2, 3], index_col=[2, 1]).sort_index()  # type: ignore
     group_strs = ('saline', 'cno')
     paired_data = [data.loc[treat, 'mutual_info'] for treat in group_strs]
     p_value = wilcoxon(*paired_data).pvalue
@@ -67,9 +97,9 @@ def plot_cno_saline():
         [axes[0].plot([1, 2], x, color='gray') for x in np.array(paired_data).T]
 
 def single_dist():
-    data = pd.read_csv(analysis_folder.joinpath("single_power.csv"), usecols=[1, 2, 3, 4],
-                       index_col=[2, 1, 3]).sort_index()
-    bins = np.linspace(data['mi'].min(), data['mi'].max(), 50)
+    data: pd.DataFrame = pd.read_csv(analysis_folder.joinpath("single_power.csv"), usecols=[1, 2, 3, 4],
+                                     index_col=[2, 1, 3]).sort_index()  # type: ignore
+    bins = np.linspace(data['mi'].min(), data['mi'].max(), 50)  # type: ignore
     group_strs = ("wt", "glt1", "dredd")
 
     def scale_hist(x):
@@ -139,7 +169,6 @@ def clip(x, r):
     return x[(x > r[0]) * (x < r[1])]
 
 def composite_example():
-    import pandas as pd
     mice_df = pd.DataFrame([[x.id, x.fov, x.session, x.name] for x in mice], columns=["id", "fov", "session", "name"])
     mice_df = mice_df.set_index(["id", "fov", "session"]).sort_index()
     choices = [mice_df.loc[x[0], :, x[1]].name.values[0] for x in (('19286', 1), ('14029', 8), ('27215', 13))]
@@ -174,6 +203,36 @@ def composite_example():
     plt.savefig(fig_folder.joinpath("decoder-example.svg"))
     plt.show()
 
+def composite_trial():
+    mice_df = pd.DataFrame([[x.id, x.fov, x.session, x.name] for x in mice], columns=["id", "fov", "session", "name"])
+    mice_df = mice_df.set_index(["id", "fov", "session"]).sort_index()
+    choices = [mice_df.loc[x[0], :, x[1]].name.values[0] for x in (('19286', 1), ('14029', 8), ('27215', 13))]
+    xy, predicts = get_result(choices, [res_trial_xy, res_predict_trial], "astrocyte")
+    example_select = {'wt': ((-6, 6), ((0, 1500), (680, 730))),
+                      'glt1': ((-3, 6), ((0, 1500), (120, 170))),
+                      'dredd': ((-2, 7), ((0, 1500), (330, 380)))}
+    fig = plt.figure(figsize=(9, 12))
+    gs = fig.add_gridspec(3, 3)
+    color_indices = [3, 1, 2]
+    for idx, (key, value) in enumerate(example_select.items()):
+        ax = fig.add_subplot(gs[idx, 0])
+        ax.plot(scale_features(xy[idx][1].values), color=colors[0], alpha=0.7, linewidth=1)
+        ax.plot(scale_features(predicts[idx]), color=colors[color_indices[idx]], alpha=0.7, linewidth=1)
+        ax.set_ylim(*value[0])
+        ax.set_xlim(*value[1][0])
+        ax.axes.get_yaxis().set_visible(False)
+        ax2 = fig.add_subplot(gs[idx, 1: 3])
+        ax2.plot(scale_features(xy[idx][1].values), color=colors[0], alpha=0.7, linewidth=2)
+        ax2.plot(scale_features(predicts[idx]), color=colors[color_indices[idx]], alpha=0.7, linewidth=2)
+        ax2.set_ylim(*value[0])
+        ax2.set_xlim(*value[1][1])
+        ax2.axes.get_yaxis().set_visible(False)
+    add_scalebar(ax, (500, 5, 1000, 5.4), 1)
+    add_scalebar(ax2, (360, 5, 370, 5.4), 1)
+    plt.tight_layout(0)
+    plt.savefig(fig_folder.joinpath("decoder-example-trial.svg"))
+    plt.show()
+    
 def example_validation(xy, predicts):
     xy, predicts = get_result([x.name for x in mice[1: 2]], [res_align_xy, res_predict], "astrocyte")
     with Figure(fig_folder.joinpath("decoder_validation.svg"), (9, 6)) as ax:
@@ -189,10 +248,9 @@ def example_validation(xy, predicts):
             ax.plot(np.arange(2100, 3000), scaled[2100: 3000] + 5.0 + idx, color='red')
 
 def single_scatter():
-    grouping = read_group(proj_folder, "grouping")
-    powers = get_result([x.name for x in mice], [res_neuron_info])[0]
+    powers = get_result(mice.name.to_list(), [res_neuron_info])[0]
     x0 = np.linspace(0, 40, 240, endpoint=False)
-    labeled_powers = group(powers, mice, grouping)
+    labeled_powers = pd.DataFrame(powers, index=mice.index).join(grouping)
     colors = {"wt": "#619CFFFF", "glt1": "#00BA38FF", "dredd": "#F8766DFF"}
 
     models: Dict[str, List[Tuple[PieceLinear3, np.ndarray]]] = {"wt": list(), "dredd": list(), "glt1": list()}
@@ -253,7 +311,7 @@ def permutation_for_sample_size():
     result = list()
     for _ in range(perm_no):
         temp_res = list()
-        for (model, mi), (model_d, mi_d) in zip(choices(models['wt'], k=perm_no), choices(models['dredd'], k=perm_no)):
+        for (model, mi), (_, mi_d) in zip(choices(models['wt'], k=perm_no), choices(models['dredd'], k=perm_no)):
             new_sample = np.flip(np.sort(np.random.choice(mi[0: int(model.x0) + 1], len(mi_d))))
             temp_res.append(linregress(np.arange(len(mi_d)), new_sample)[0])
         result.append(temp_res)

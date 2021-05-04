@@ -1,21 +1,20 @@
 ##
 from typing import Tuple, List
-from multiprocessing import Pool, cpu_count
 from pathlib import Path
 import numpy as np
 import pandas as pd
 from algorithm.time_series import SparseRec
-from algorithm.time_series.utils import take_segment
+from algorithm.time_series.utils import take_segment  # type: ignore
 from algorithm.array import DataFrame
 from pypedream import Task, get_result
 from encoding_model import build_predictor, run_encoding, Predictors, Grouping, bspline_set
 from lever.script.steps.decoder import res_align_xy
 from lever.script.steps.behavior import res_behavior
-from lever.script.steps.utils import read_index, read_group, group, group_nested, Case
 
 proj_folder = Path.home().joinpath("Sync/project/2018-leverpush-chloe/")
 Task.save_folder = proj_folder.joinpath("data", "interim")
-mice = read_index(proj_folder)
+mice: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "index", "index.csv"))  # type: ignore
+grouping: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "index", "grouping.csv").open('r')).set_index(["id", "session"])  # type: ignore
 
 def get_predictor(behavior: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float],
                   aligned_spike: Tuple[DataFrame, SparseRec], sample_rate: int,
@@ -35,14 +34,14 @@ def get_predictor(behavior: Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray
     """
     (amplitude, max_speed, delay, hit, _), (spike, trace) = behavior, aligned_spike
     trial_samples = int(round(sample_rate * 5.0))
-    delay_sample = np.minimum(trial_samples - 1, np.rint(delay * sample_rate).astype(np.int))
+    delay_sample = np.minimum(trial_samples - 1, np.rint(delay * sample_rate).astype(int))
     delay_period = np.vstack(list(np.broadcast(0, delay_sample))).T
-    onset = np.rint(trace.timestamps * 5 / 256).astype(np.int)
-    trajectory = take_segment(trace.values, onset, trial_samples)
-    speed = take_segment(np.diff(trace.values), onset - 1, trial_samples)
+    onset = np.rint(trace.timestamps * 5 / 256).astype(int)
+    trajectory: np.ndarray = take_segment(trace.values, onset, trial_samples)
+    speed: np.ndarray = take_segment(np.diff(trace.values), onset - 1, trial_samples)
     y = np.array([take_segment(neuron, onset, trial_samples) for neuron in spike.values])
-    preds = Predictors((0, delay_sample), (delay_period,), (hit, delay), (trajectory, speed))
-    grouping = Grouping(np.array([1, 2]), np.array([3]), np.array([4, 5]), np.array([6, 7]))
+    preds = Predictors((0, delay_sample), [delay_period], [hit, delay], [trajectory, speed])
+    grouping = Grouping([1, 2], [3], [4, 5], [6, 7])
     preds, grouping = build_predictor(preds, grouping, hit, spline)
     return preds, y, grouping
 task_predictor = Task(get_predictor, "2020-02-20T13:04", "encoding-predictor-minimal",
@@ -60,27 +59,23 @@ predictor_names = ["start", "reward", "isMoving", "hit", "delay", "trajectory", 
 ##
 def merge(result: List[Tuple[np.ndarray, np.ndarray]]):
     r2mean = np.array([np.mean(np.maximum(0, x[0]), axis=0) for x in result])
-    groups = read_group(proj_folder, 'grouping')
-    mean = pd.DataFrame(group(r2mean, mice, groups), columns=predictor_names + ["case_id", "session_id", "group"])
+    mean = grouping.join(pd.DataFrame(r2mean, index=mice.set_index(["id", "session"]).index, columns=predictor_names), how="inner")
+    mean.set_index("group", append=True).reorder_levels(["group", "id", "session"])
     mean.to_csv(proj_folder.joinpath("data", "analysis", "encoding_mean_minimal.csv"))
     r2s = [x[0] for x in result]
-    merged = pd.DataFrame(group_nested(r2s, mice, groups), columns=predictor_names + ["case_id", "session_id", "group"])
+    res = pd.DataFrame([x for y in r2s for x in y], index=np.repeat(mice.index, [len(x) for x in r2s]), columns=predictor_names)
+    merged = res.join(mice, how="inner").set_index(["id", "session"]).join(grouping, how="inner")
     merged.to_csv(proj_folder.joinpath("data", "analysis", "encoding_minimal.csv"))
 
 def check_predictor_size():
-    predictors = get_result([x.name for x in read_index(proj_folder)], [res_predictor])[0]
-    groups = pd.DataFrame([(x.id, x.session, group_str) for group_str, value
-                           in read_group(proj_folder, "grouping").items() for x in value])
-    groups.columns = ["id", "session", "group"]
-    mice = pd.DataFrame([[x.id, x.session, x.name] for x in read_index(proj_folder)])
-    mice.columns = ["id", "session", "name"]
-    lookup = groups.join(mice.set_index(["id", "session"]), on=["id", "session"]).set_index("name").sort_index()
-    res = {"wt": [], "dredd": [], "glt1": []}
-    for mouse, predictor in zip(read_index(proj_folder), predictors):
-        if mouse.name in lookup.index:
-            res[lookup.loc[mouse.name, "group"]].append(predictor[1].shape[0: 2])
+    predictors = get_result(mice.name.to_list(), [res_predictor])[0]
+    lookup = grouping.join(mice.set_index(["id", "session"])).set_index("name").sort_index()
+    res = {"wt": [], "dredd": [], "glt1": [], "gcamp6f": []}
+    for (_, mouse), predictor in zip(mice.iterrows(), predictors):
+        if mouse['name'] in lookup.index:
+            res[lookup.loc[mouse['name'], "group"]].append(predictor[1].shape[0: 2])
     res = {key: np.sum(value, axis=0) for key, value in res.items()}
 
 if __name__ == '__main__':
-    merge(get_result([x.name for x in mice], [res_encoding], "log-encoding")[0])
-    # get_result([x.name for x in mice], [res_model], "log-encoding-model")[0]
+    result = get_result(mice.name.to_list(), [res_encoding], "log-encoding")[0]
+    merge(result)

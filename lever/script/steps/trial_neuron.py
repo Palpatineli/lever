@@ -9,12 +9,11 @@ from algorithm.time_series import SparseRec, fold_by
 from pypedream import Task, get_result
 from lever.script.steps.log import res_trial_log, res_trial_log_quiet
 from lever.script.steps.align import res_spike
-from lever.script.steps.utils import read_index, read_group, group_nested
 
 __all__ = ['res_trial_neuron']
 proj_folder = Path.home().joinpath("Sync/project/2018-leverpush-chloe")
 Task.save_folder = proj_folder.joinpath("data", "interim")
-mice = read_index(proj_folder)
+mice: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "index", "index.csv")).set_index(["id", "session"])  # type: ignore
 
 def make_trial_neuron(trial_log: SparseRec, spike_framerate: Tuple[Dict[str, np.ndarray], float]) -> DataFrame:
     spikes, frame_rate = spike_framerate
@@ -47,16 +46,18 @@ task_related_neurons = Task(make_related_neurons, "2019-07-10T15:46", "related-n
 res_related_neurons = task_related_neurons([res_trial_log_quiet, res_spike])
 
 ##
-def main():
-    related_neurons = get_result([x.name for x in mice], [res_related_neurons])
-    return related_neurons
-
 def merge(result: List[np.ndarray]):
-    cno_grouping = read_group(proj_folder, "cno-schedule")
-    grouping = read_group(proj_folder, "grouping")
-    grouping.update(cno_grouping)
-    merged = pd.DataFrame(group_nested(result, mice, grouping), columns=("p", "id", "group"))
+    cno_grouping: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "index", "cno-schedule.csv")).set_index(["id", "session"])  # type: ignore
+    grouping: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "index", "grouping.csv")).set_index(["id", "session"])  # type: ignore
+    grouping = pd.concat([grouping, cno_grouping])
+    merged = pd.DataFrame([x for y in result for x in y], index=np.repeat(mice.index, [len(x) for x in result]), columns=["p"])\
+        .join(grouping)
     merged.to_csv(proj_folder.joinpath("data", "analysis", "related.csv"))
 
+def main():
+    result = get_result(mice.name.to_list(), [res_related_neurons])[0]
+    merge(result)
+
 if __name__ == '__main__':
-    merge(main()[0])
+    main()
+##

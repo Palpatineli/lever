@@ -39,7 +39,7 @@ def accuracy(trials: ts.SparseRec, labels: np.ndarray, transform: str = "none",
         X = np.swapaxes(X.mean(-1), 0, 1)
     else:
         raise ValueError("[precision] <transform> must be one of 'none', 'corr', or 'mean'.")
-    X = PCA(PC_NO).fit_transform(X) if X.shape[0] > PC_NO else X
+    X = PCA(PC_NO).fit_transform(X) if X.shape[1] > PC_NO else X
     params = {"kernel": "linear", "gamma": "auto"}
     params.update(kwargs)
     svc = SVC(**params)

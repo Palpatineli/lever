@@ -7,3 +7,7 @@ _build
 .pytest_cache
 *.log
 *.html
+.idea
+.vscode
+__pycache__
+.mypy_cache

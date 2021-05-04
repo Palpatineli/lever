@@ -1,3 +1,4 @@
+##
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -13,16 +14,15 @@ from algorithm.utils import quantize
 from pypedream import get_result
 from lever.plot import get_threshold
 from lever.script.steps.trial_neuron import res_trial_neuron, proj_folder
-from lever.script.steps.classifier import res_cluster, res_linkage
-from lever.script.steps.utils import read_index
+from lever.script.steps.classifier import res_cluster, res_linkage, mice
 
-mice = read_index(proj_folder)
 fig_folder = proj_folder.joinpath("report", "fig", "classifier")
 
 def scale(x, axis=-1):
     std = x.std(axis=axis, keepdims=True)
     return np.divide(x - x.mean(axis=axis, keepdims=True), std, out=np.zeros_like(x), where=std != 0)
 
+##
 def draw_threshold():
     case_idx = [idx for idx, case in enumerate(mice) if case.id == "14032" and case.fov == 1][0]
     case = mice[case_idx: case_idx + 1]
@@ -66,25 +66,25 @@ def draw_pca():
 
 def draw_diagnal():
     data = pd.read_csv(proj_folder.joinpath("data", "analysis", "classifier_power_validated.csv"))
-    means = data.groupby(["id", "session", "fov", "group", "type"]).mean()
-    colors = {'wt': '#00272B', 'glt1': '#099963', 'dredd': '#F94040'}
+    means = data.groupby(["id", "session", "group", "type"]).mean()
+    colors = {'wt': '#00272B', 'glt1': '#099963', 'dredd': '#F94040', "gcamp6f": "#619CFF"}
     xs, ys = zip(*[(means.query(f"type=='corr' and group=='{group}'")['precision'].values,
                     means.query(f"type=='mean' and group=='{group}'")['precision'].values)
-                   for group in ('wt', 'glt1', 'dredd')])
+                   for group in ('wt', 'gcamp6f', 'glt1', 'dredd')])
     # customize Figure generation
     fig = plt.figure(figsize=(9, 9))
     ax1 = fig.add_subplot()
-    pair(xs, ys, [colors[x] for x in ('wt', 'glt1', 'dredd')], ax1,
+    pair(xs, ys, [colors[x] for x in ('wt', 'gcamp6f', 'glt1', 'dredd')], ax1,
          density_params={"bw": 0.5}, scatter_params={"alpha": 0.7})
     plt.savefig(fig_folder.joinpath("classifier-scatterplot.svg"))
     fig2 = plt.figure(figsize=(4, 9))
     ax2 = fig2.add_subplot(1, 1, 1, sharey=ax1)
     data_mean = data[data.type == "mean"]
-    data_mean = data_mean.set_index(["group", "id", "fov", "session"])
+    data_mean = data_mean.set_index(["group", "id", "session"])
     values_mean = [data_mean.loc[group_str, 'precision'].values for group_str in ('wt', 'glt1', 'dredd')]
     boxplot = plots.boxplot(ax2, values_mean, whis=(10., 90.), showfliers=False, colors=colors.values())
     plots.annotate_boxplot(ax2, boxplot, 16, 1.0, p_values=[((0, 1), 0.334), ((0, 2), 0.964)])
-    ax2.set_xticklabels(["WT", "GLT1", "Gq"])
+    ax2.set_xticklabels(["WT", 'gcamp6s', "GLT1", "Gq"])
     ax2.set_ylim(*ax1.get_ylim())
     plt.savefig(fig_folder.joinpath("classifier-edge.svg"))
     plt.show()
@@ -92,11 +92,11 @@ def draw_diagnal():
 def draw_boxplot():
     data = pd.read_csv(proj_folder.joinpath("data", "analysis", "classifier_power_validated.csv"))
     data = data[data.type != "none"]
-    means = data.groupby(["id", "fov", "group", "type"]).mean().reset_index()
+    means = data.groupby(["id", "session", "group", "type"]).mean().reset_index()
     width = 0.6
     with Figure(fig_folder.joinpath("classifier-compare.svg"), (10, 6)) as axes:
         sns.boxplot(x="group", y="precision", hue="type", data=data, notch=True, width=width, whis=1.0, ax=axes[0])
-        for idx, group in enumerate(('wt', 'glt1', 'dredd')):
-            temp = pd.pivot_table(means[means.group == group], index=['id', 'fov'], columns='type', values='precision')
+        for idx, group in enumerate(('wt', 'gcamp6f', 'glt1', 'dredd')):
+            temp = pd.pivot_table(means[means.group == group], index=['id', 'session'], columns='type', values='precision')
             for value in np.fliplr(temp.values):
                 axes[0].plot([idx - width / 4, idx + width / 4], value, color="#555753")

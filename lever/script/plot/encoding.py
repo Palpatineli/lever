@@ -10,25 +10,25 @@ from sklearn.decomposition import PCA
 from pypedream import get_result
 from lever.script.steps.encoding import res_encoding, res_behavior, res_align_xy, res_predictor
 from lever.script.steps.encoding import mice, proj_folder, predictor_names
-from lever.script.steps.utils import read_group
 from lever.script.utils import print_stats_factory
 
 data_folder = proj_folder.joinpath("data", "analysis")
 fig_folder = proj_folder.joinpath("report", "fig", "encoder")
 colors = ["#00272B", "#099963", "#f94040", "#1481BA", "#E0FF4F"]
 print_stats = print_stats_factory(proj_folder.joinpath("report", "stat", "encoding.txt"))
+grouping: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "index", "index.csv")).set_index(["id", "session"])  # type: ignore
 
 def r2imshow():
-    r2 = get_result([x.name for x in mice], [res_encoding], "r2")[0]
+    r2 = get_result(mice.name.to_list(), [res_encoding], "r2")[0]
     r2 = [x[0] for x in r2]
     fig_path = proj_folder.joinpath("report", "fig", "encoding")
-    for single_r2, mouse in zip(r2, mice):
+    for single_r2, (_, mouse) in zip(r2, mice.iterrows()):
         if mouse.name in ["14039-2-02"]:  # ["14032-1-01", "14039-2-02", "14039-1-01", "27215-3-18"]:
             print(mouse.name)
-            with Figure(fig_path.joinpath(mouse.name + ".svg"), (10, 20)) as axes:
+            with Figure(fig_path.joinpath(mouse.name + ".svg"), (10, 20)) as axes:  # type: ignore
                 ax = axes[0]
                 rc('font', family='Lato', weight='bold', size=12)
-                order = PCA(n_components=2).fit_transform(single_r2)
+                order = PCA(n_components=2).fit_transform(single_r2)  # type: ignore
                 data = plots.Array(np.maximum(single_r2[np.argsort(-order[:, 0]), :-1].T, 0),
                                    [predictor_names, np.arange(single_r2.shape[0])])
                 data.axes = [data.axes[1], data.axes[0]]
@@ -48,14 +48,11 @@ def single_order_compare():
         axes[1].imshow(single_r2[np.argsort(-order[:, 1]), :])
         order = TSNE(n_components=1).fit_transform(single_r2)
         axes[2].imshow(single_r2[np.argsort(-order.ravel()), :])
-##
-def pick_case():
-    grouping = read_group(proj_folder, "grouping")
-    [(k, v) for k, vs in grouping.items() for v in vs if v.id == "14039" and v.session == 1]
 
+##
 def spline_examples():
     case_id, trial_id = 0, 3
-    behavior, align_xy, predictors = get_result([mice[case_id].name], [res_behavior, res_align_xy, res_predictor])
+    behavior, align_xy, predictors = get_result([mice.iloc[case_id]["name"]], [res_behavior, res_align_xy, res_predictor])
     preds, y, preds_group = predictors[0]
     splines = preds.event[0:5, trial_id, :].T
     coefs = np.array([[1, 2, 3, 4, 3],
@@ -167,18 +164,38 @@ def boxplot_main():
             axes[0].plot(x, [start.get_data()[1][0]] * 2, linestyle=":", color="black", zorder=4, linewidth=2)
             axes[0].plot(x, [start.get_data()[1][0]] * 2, linestyle=":", color="black", zorder=4, linewidth=2)
 
+def boxplot_all():
+    data: pd.DataFrame = pd.read_csv(data_folder.joinpath("encoding_minimal.csv")).set_index(["group", "id", "fov", "session"]).sort_index()["all"]
+    data = data.drop([('gcamp6f', 51551, 1, 1), ('gcamp6f', 51551, 3, 4), ('gcamp6f', 51551, 4, 7), ('gcamp6f', 51551, 5, 8), ('gcamp6f', 51552, 3, 4)], axis='index')
+    with Figure(fig_folder.joinpath("encoder-all-comp.svg"), figsize=(8, 9)) as axes:
+        res = ["median: "] + str(data.groupby('group').median()).split('\n')[2:]
+        group_names = ('wt', "gcamp6f", 'glt1', 'dredd')
+        group_strs = ["WT", "gcamp6f", "GLT1", "Gq"]
+        annotation = list()
+        for (idx, x), (idy, y) in combinations(enumerate(group_names), 2):
+            p = mannwhitneyu(data.loc[x, ], data.loc[y, ], True, 'two-sided').pvalue
+            res.append(f"mann u, {x} v. {y} p={p}")
+            if p < 0.05:
+                annotation.append(((idx, idy), p))
+        print_stats("encoder full r2", res)
+        values = [data.loc[x, ].groupby(["id", "session"]).mean() for x in group_names]
+        boxplots = plots.boxplot(axes[0], values, whis=(10., 90.), zorder=1, showfliers=False, colors=colors)
+        plots.dots(axes[0], values, zorder=3, s=24, jitter=0.02)
+        axes[0].set_xticklabels(group_strs)
+        plots.annotate_boxplot(axes[0], boxplots, 24, 1.2, annotation)
+
+
 def piechart():
     """the proportion of R^2 split among behavior, as measured by R^2 averaged across neurons."""
-    data = pd.read_csv(data_folder.joinpath("encoding_minimal.csv"),
-                       index_col=['group', 'case_id', 'session_id', 'Unnamed: 0'])
+    data: pd.DataFrame = pd.read_csv(data_folder.joinpath("encoding_minimal.csv")).set_index(["group", "id", "fov", "session", "name"])  # type: ignore
     data[data < 0] = 0
     group_mean = data.groupby("group").mean().assign(
         rest=lambda x: ((x['start'] + x['reward'] + x['isMoving'] + x['trajectory'])
                         / 4))[["hit", "delay", "speed", "rest"]]
     labels = ["Hit/Miss", "Response Time", "Speed", "Rest"]
-    for group_str in ('wt', 'glt1', 'dredd'):
+    for group_str in ('wt', 'glt1', 'dredd', "gcamp6f"):
         group = group_mean.loc[group_str]
-        explode = np.zeros(len(group), dtype=np.float)
+        explode = np.zeros(len(group), dtype=float)
         explode[np.argmax(group)] = 0.2
         with Figure(fig_folder.joinpath(f"pie-{group_str}.svg"), figsize=(6, 6)) as axes:
             axes[0].pie(group.values / group.values.sum(), explode, labels,
@@ -187,8 +204,7 @@ def piechart():
 
 def piechart_data():
     """export data to be used in d3"""
-    data = pd.read_csv(data_folder.joinpath("encoding_minimal.csv"),
-                       index_col=['group', 'case_id', 'session_id', 'Unnamed: 0'])
+    data: pd.DataFrame = pd.read_csv(data_folder.joinpath("encoding_minimal.csv")).set_index(["group", "id", "fov", "session", "name"])  # type: ignore
     data[data < 0] = 0
     # group_mean = data.groupby("group").mean().assign(
     #    rest=lambda x: ((x['start'] + x['reward'] + x['isMoving'] + x['trajectory'])
@@ -198,22 +214,21 @@ def piechart_data():
                         / 4))[["all", "delay", "hit", "speed", "rest"]]
     labels = ["All", "Response Time", "Hit/Miss", "Speed", "Rest"]
     group_mean.columns = labels
-    group_mean.index = pd.Index(["Gq", "GLT1", "WT"], name="group")
-    group_mean.to_csv(data_folder.joinpath("encoding_minimal_mean.csv"))
+    group_mean.index = pd.Index(["Gq", "gCaMP6f", "GLT1", "WT"], name="group")
+    group_mean.tn_csv(data_folder.joinpath("encoding_minimal_mean.csv"))
 
 def piechart_winner():
     """the proportion of neurons where a behavior as the most R^2"""
-    data = pd.read_csv(data_folder.joinpath("encoding_minimal.csv"),
-                       index_col=['group', 'case_id', 'session_id', 'Unnamed: 0'])
+    data: pd.DataFrame = pd.read_csv(data_folder.joinpath("encoding_minimal.csv")).set_index(["group", "id", "fov", "session", "name"])  # type: ignore
     data[data < 0] = 0
     shortened = data.assign(
         rest=lambda x: ((x['start'] + x['reward'] + x['isMoving'] + x['trajectory'])
                         / 4))[["hit", "delay", "speed", "rest"]]
     groups = shortened.idxmax(1).groupby(level=0).value_counts().unstack()[["hit", "delay", "speed", "rest"]]
     labels = ["Hit/Miss", "Response Time", "Speed", "Rest"]
-    for group_str in ('wt', 'glt1', 'dredd'):
+    for group_str in ("wt", "glt1", "dredd", "gcamp6f"):
         group = groups.loc[group_str]
-        explode = np.zeros(len(group), dtype=np.float)
+        explode = np.zeros(len(group), dtype=float)
         explode[np.argmax(group)] = 0.2
         with Figure(fig_folder.joinpath(f"pie-{group_str}-max-neuron.svg"), figsize=(6, 6)) as axes:
             axes[0].pie(group.values / group.values.sum(), explode, labels,
@@ -258,6 +273,7 @@ def boxplot_rest():
             right_line = end.get_data()[0]
             x = [left_line[0] - width / 2, right_line[1] + width / 2]
             axes[0].plot(x, [start.get_data()[1][0]] * 2, linestyle=":", color="black", zorder=4, linewidth=2)
+            axes[0].plot(x, [start.get_data()[1][0]] * 2, linestyle=":", color="black", zorder=4, linewidth=2)
 
 def main_distributions():
     data = pd.read_csv(data_folder.joinpath("encoding_minimal.csv"))
@@ -267,3 +283,7 @@ def main_distributions():
         value_by_group = [value[value > 0.01] for value in value_by_group]
         with Figure(fig_folder.joinpath(f"dist-{behavior}.svg"), figsize=(9, 3), show=True) as axes:
             axes[0].hist(value_by_group, 50, color=colors[0: 3], rwidth=1, lw=0)
+
+df = pd.read_csv(data_folder.joinpath("encoding_minimal.csv"))
+df.groupby("group").mean()
+df_mean = pd.read_csv(data_folder.joinpath("encoding_minimal_mean_bak.csv"))

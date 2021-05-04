@@ -12,7 +12,7 @@ def print_stats_factory(log_file: Path):
     def print_stats(name: str, statements: List[str]):
         if log_file.exists():
             with log_file.open("r") as fp:
-                stat_dict = yaml.load(fp, Loader=yaml.CLoader)
+                stat_dict = yaml.load(fp, Loader=yaml.SafeLoader)
             stat_dict[name] = statements
         else:
             stat_dict = {name: statements}
@@ -20,7 +20,7 @@ def print_stats_factory(log_file: Path):
         for statement in statements:
             print('\t', statement)
         with log_file.open("w") as fp:
-            yaml.dump(stat_dict, fp, Dumper=yaml.CDumper)
+            yaml.dump(stat_dict, fp)
     return print_stats
 
 ##

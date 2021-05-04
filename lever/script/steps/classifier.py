@@ -1,5 +1,5 @@
 ##
-from typing import Tuple, List, Dict
+from typing import Tuple, List
 from itertools import combinations
 from pathlib import Path
 from warnings import simplefilter
@@ -9,8 +9,7 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from fastdtw import fastdtw
 from algorithm.array import DataFrame
 from algorithm.time_series import SparseRec
-from lever.plot import get_threshold  # , plot_scatter
-from lever.script.steps.utils import group_index, read_group, read_index
+from lever.plot import get_threshold
 from lever.script.steps import log, trial_neuron
 from lever.decoding.cluster import accuracy
 from pypedream import Task, get_result
@@ -18,7 +17,8 @@ simplefilter(action='ignore', category=FutureWarning)
 
 proj_folder = Path.home().joinpath("Sync/project/2018-leverpush-chloe/")
 Task.save_folder = proj_folder.joinpath("data", "interim")
-mice = read_index(proj_folder)
+mice: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "index", "index.csv")).set_index(["id", "session"])  # type: ignore
+grouping: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "index", "grouping.csv")).set_index(["id", "session"])  # type: ignore
 
 def make_dtw_hierarchy(trial_log: SparseRec) -> np.ndarray:
     return linkage([fastdtw(x, y)[0] for x, y in combinations(trial_log.values, 2)])
@@ -42,9 +42,6 @@ def make_cluster(linkage_mat: np.ndarray, threshold: float) -> np.ndarray:
 task_cluster = Task(make_cluster, "2019-05-02T17:59", "cluster")
 res_cluster = task_cluster([res_linkage, res_threshold])
 
-def _corrcoef(x):
-    return np.corrcoef(x)[np.triu(x.shape[0], 1)]
-
 def classifier_power(trial_neuron: DataFrame, cluster: np.ndarray) -> Tuple[float, float, float]:
     """
     Args:
@@ -60,24 +57,17 @@ res_classifier_power = task_classifier([trial_neuron.res_trial_neuron, res_clust
 
 ## Aggregate Analysis
 def merge(result: List[np.ndarray]):
-    group_strs = group_index(mice, read_group(proj_folder, 'grouping'))
-    value_list, tag_list = list(), list()
-    for one_result, group_str, case in zip(result, group_strs, mice):
-        if group_str is not None:
-            for values, fit_type in zip(one_result, ("none", "mean", "corr")):
-                for value in values:
-                    value_list.append(value)
-                    tag_list.append((fit_type, group_str, case.id, case.session, case.fov))
-    merged = pd.concat([pd.DataFrame(np.hstack(value_list).reshape(-1, 1), columns=['precision']),
-                        pd.DataFrame(tag_list, columns=['type', 'group', 'id', 'session', 'fov'])], axis=1)
-    merged.to_csv(proj_folder.joinpath("data", "analysis", "classifier_power_validated.csv"))
+    merged = pd.DataFrame(np.vstack(np.transpose(x) for x in result), index=np.repeat(mice.index, [len(x[0]) for x in result]),
+                          columns=["none", "mean", "corr"]).join(grouping, how="inner").reset_index()
+    merged = pd.melt(merged, id_vars=["group", "id", "session"], var_name="type", value_name="precision")
+    merged.to_csv(proj_folder.joinpath("data", "analysis", "classifier_power_validated.csv"), index=False)
 
 def traces():
     from lever.script.steps import log
     from algorithm.utils import quantize
     index = 1
-    cluster = get_result([x.name for x in mice][index: index + 1], [res_cluster])
-    trials = get_result([x.name for x in mice][index: index + 1], [log.res_trial_log])
+    cluster = get_result(mice.name.to_list()[index: index + 1], [res_cluster])
+    trials = get_result(mice.name.to_list()[index: index + 1], [log.res_trial_log])
     result = list()
     for trial, y in zip(trials[0].values, quantize(cluster[0])):
         for idx, item in enumerate(trial):
@@ -87,22 +77,20 @@ def traces():
 
 def plot():
     import seaborn as sns
-    df = pd.read_csv(proj_folder.joinpath("data", "analysis", "classifier_power.csv"))
-    mean_pred = df[df['type'] == 'corr'].groupby("id").mean()
-    sns.scatterplot("group", "precision", mean_pred)
+    df: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "analysis", "classifier_power.csv"))  # type: ignore
+    mean_pred = df[df['type'] == 'corr'].groupby(["id", "group"]).mean()
+    sns.scatterplot(x="group", y="precision", data=mean_pred)
 
 def check_data_size():
-    neurons = get_result([x.name for x in mice], [trial_neuron.res_trial_neuron])[0]
-    group_strs = group_index(mice, read_group(proj_folder, "grouping"))
-    res: Dict[str, List[Tuple[int, int]]] = {"dredd": [], "glt1": [], "wt": []}
-    for session, group_str in zip(neurons, group_strs):
-        if group_str is not None:
-            print(session.shape[0: 2])
-            res[group_str].append(session.shape)
-    res = {key: np.array(value).sum(axis=0) for key, value in res.items()}
+    neurons = get_result(mice.name.to_list(), [trial_neuron.res_trial_neuron])[0]
+    res = pd.DataFrame([x.shape[0: 2] for x in neurons], index=mice.index, columns=["x", "y"]).join(grouping, how="inner")
+    print(res.groupby("group").aggregate(sum))
+
 ##
+def main():
+    result = get_result(mice.name.to_list(), [res_classifier_power])[0]
+    merge(result)
+
 if __name__ == '__main__':
-    merge(get_result([x.name for x in mice], [res_classifier_power])[0])
-    # print_tree()
-    # draw_tree()
+    main()
 ##

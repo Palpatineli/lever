@@ -1,8 +1,8 @@
 ##
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Union
 from pathlib import Path
 import numpy as np
-import toml
+import pandas as pd
 from pypedream import FileObj, Task, get_result, InputObj, Input
 from aligner.align import Alignment
 from aligner.roi_reader import Roi, read_roi_zip
@@ -13,10 +13,7 @@ __all__ = ['res_spike', 'res_measure']
 proj_folder = Path.home().joinpath("Sync/project/2018-leverpush-chloe")
 Task.save_folder = proj_folder.joinpath("data", "interim")
 Input.save_folder = proj_folder.joinpath("data")
-mice = [dict(x) for x in toml.load(proj_folder.joinpath("data", "index", "index.toml"))["recordings"]]
-
-def _info_to_name(info: Dict[str, str]) -> str:
-    return f"{info['id']}-{info['fov']}-{info['session']:02d}"
+mice: pd.DataFrame = pd.read_csv(proj_folder.joinpath("data", "index", "index.csv"))  # type: ignore
 
 class AlignmentInput(InputObj):
     def time(self) -> float:
@@ -25,7 +22,7 @@ class AlignmentInput(InputObj):
 
     def load(self):
         tif_file = self.file_path.joinpath("original", f"{self.name}-ch2-5hz.tif")
-        return Alignment(tif_file)
+        return Alignment(str(tif_file))
 
 def make_align(session: Alignment) -> Alignment:
     session.align()
@@ -35,10 +32,10 @@ input_tif = Input(AlignmentInput, "2015-01-01T00:00", "tif")
 
 class AlignmentCache(FileObj):
     def save(self, obj):
-        obj.save(self.file_path)
+        obj.save(self.file_path, draw_limit=True)
 
     def load(self) -> Alignment:
-        return Alignment.load(self.file_path)
+        return Alignment.load(str(self.file_path))
 
     def time(self) -> float:
         displacement = self.file_path.joinpath("displacement.npy")
@@ -54,11 +51,11 @@ class RoiInput(InputObj):
             return 0
         return sorted(zip_file.stat().st_mtime for zip_file in zips)[-1]
 
-    def load(self) -> float:
+    def load(self) -> Union[float, List[Roi]]:
         zips = list(self.file_path.joinpath("interim", "align", self.name).glob("*.zip"))
         if len(zips) == 0:
             return 0
-        return read_roi_zip(sorted((zip_file.stat().st_mtime, zip_file) for zip_file in zips)[-1][1])
+        return read_roi_zip(str(sorted((zip_file.stat().st_mtime, zip_file) for zip_file in zips)[-1][1]))
 
 input_roi = Input(RoiInput, "2015-01-01T00:00")
 
@@ -80,7 +77,7 @@ res_spike = task_spike(res_measure)
 
 ##
 def main():
-    result = get_result([x['name'] for x in mice], [res_spike], "alignment")[0]
+    result = get_result(mice.name.to_list(), [res_align], "alignment")[0]
     return result
 
 if __name__ == '__main__':
